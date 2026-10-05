@@ -1,0 +1,50 @@
+name: sahayayu
+description: "A new Flutter project."
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: ">=3.0.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # UI & Icons
+  cupertino_icons: ^1.0.8
+
+  # Supabase & Backend
+  supabase_flutter: ^2.8.0
+
+  # Hardware, Geolocation & Native Services
+  geolocator: ^13.0.0
+  url_launcher: ^6.3.0
+  connectivity_plus: ^6.0.5
+
+  # Local Persistence & Outbox
+  sqflite: ^2.3.3
+  path: ^1.9.0
+  uuid: ^4.5.1
+
+  # AI & Notifications
+  google_generative_ai: ^0.4.6
+  flutter_local_notifications: ^17.2.2
+  timezone: ^0.9.4
+  sensors_plus: ^7.1.1
+  speech_to_text: ^7.5.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+  flutter_launcher_icons: ^0.14.4
+
+flutter:
+  uses-material-design: true
+
+# Only configure this if you have an image at assets/icon/app_icon.png
+# flutter_launcher_icons:
+#   android: true
+#   ios: true
+#   image_path: "assets/icon/app_icon.png"
