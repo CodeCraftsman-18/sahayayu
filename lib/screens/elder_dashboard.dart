@@ -8,6 +8,7 @@ import 'login_screen.dart';
 import 'ai_chat_screen.dart';
 import '../services/fall_detection_service.dart';
 import '../services/voice_sos_service.dart';
+import 'clinical_intake_screen.dart';
 
 // --- Top-Level Model ---
 class MedicationItem {
@@ -18,6 +19,7 @@ class MedicationItem {
   final Color pillColor;
   final bool isCapsule;
   bool isTaken;
+  
 
   MedicationItem({
     required this.id,
@@ -45,6 +47,7 @@ class _ElderDashboardState extends State<ElderDashboard> {
 
   int _systolicBp = 120;
   int _diastolicBp = 80;
+  bool _isSendingSos = false;
 
   // Shock Index: Heart Rate / Systolic BP (Normal: 0.5 - 0.7; Critical: >= 0.9)
   double get _shockIndex => _systolicBp > 0 ? _bpm / _systolicBp : 0.63;
@@ -102,7 +105,7 @@ class _ElderDashboardState extends State<ElderDashboard> {
       _initVoiceSentinel();
     });
   }
-  
+
   void _initVoiceSentinel() async {
     final available = await VoiceSosService.instance.initialize(
       onKeywordDetected: (keyword) {
@@ -210,7 +213,6 @@ class _ElderDashboardState extends State<ElderDashboard> {
           _diastolicBp = newDia;
         });
       }
-      
 
       if (_isCheckingGeofence) return;
       _isCheckingGeofence = true;
@@ -233,7 +235,8 @@ class _ElderDashboardState extends State<ElderDashboard> {
           _geofenceBreached = true;
           _triggerSos(
             source: 'Geofence Breach (Wandering)',
-            location: '${pos.latitude.toStringAsFixed(4)}, ${pos.longitude.toStringAsFixed(4)}',
+            location:
+                '${pos.latitude.toStringAsFixed(4)}, ${pos.longitude.toStringAsFixed(4)}',
           );
         } else if (distance <= _safeRadiusMeters) {
           _geofenceBreached = false;
@@ -259,7 +262,8 @@ class _ElderDashboardState extends State<ElderDashboard> {
       if (!serviceEnabled) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Please enable GPS hardware on device.')),
+            const SnackBar(
+                content: Text('Please enable GPS hardware on device.')),
           );
         }
         setState(() => _isLiveLocationEnabled = false);
@@ -358,7 +362,8 @@ class _ElderDashboardState extends State<ElderDashboard> {
       builder: (sheetContext) {
         return StatefulBuilder(
           builder: (context, setModalState) {
-            final remainingCount = _dailyMedications.where((m) => !m.isTaken).length;
+            final remainingCount =
+                _dailyMedications.where((m) => !m.isTaken).length;
 
             return Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
@@ -382,18 +387,26 @@ class _ElderDashboardState extends State<ElderDashboard> {
                     children: [
                       const Text(
                         'Daily Medicines',
-                        style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                        style: TextStyle(
+                            fontSize: 20, fontWeight: FontWeight.bold),
                       ),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 4),
                         decoration: BoxDecoration(
-                          color: remainingCount == 0 ? const Color(0xFFE8F5E9) : const Color(0xFFFFF3E0),
+                          color: remainingCount == 0
+                              ? const Color(0xFFE8F5E9)
+                              : const Color(0xFFFFF3E0),
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: Text(
-                          remainingCount == 0 ? 'All Taken' : '$remainingCount Pending',
+                          remainingCount == 0
+                              ? 'All Taken'
+                              : '$remainingCount Pending',
                           style: TextStyle(
-                            color: remainingCount == 0 ? _primaryGreen : const Color(0xFFE65100),
+                            color: remainingCount == 0
+                                ? _primaryGreen
+                                : const Color(0xFFE65100),
                             fontSize: 12,
                             fontWeight: FontWeight.bold,
                           ),
@@ -412,10 +425,14 @@ class _ElderDashboardState extends State<ElderDashboard> {
                         return Container(
                           padding: const EdgeInsets.all(12),
                           decoration: BoxDecoration(
-                            color: med.isTaken ? const Color(0xFFF9FAFB) : Colors.white,
+                            color: med.isTaken
+                                ? const Color(0xFFF9FAFB)
+                                : Colors.white,
                             borderRadius: BorderRadius.circular(14),
                             border: Border.all(
-                              color: med.isTaken ? Colors.grey.shade300 : _primaryGreen.withOpacity(0.3),
+                              color: med.isTaken
+                                  ? Colors.grey.shade300
+                                  : _primaryGreen.withOpacity(0.3),
                             ),
                           ),
                           child: Row(
@@ -425,12 +442,19 @@ class _ElderDashboardState extends State<ElderDashboard> {
                                 height: 44,
                                 decoration: BoxDecoration(
                                   color: med.pillColor.withOpacity(0.18),
-                                  shape: med.isCapsule ? BoxShape.rectangle : BoxShape.circle,
-                                  borderRadius: med.isCapsule ? BorderRadius.circular(14) : null,
-                                  border: Border.all(color: med.pillColor, width: 2),
+                                  shape: med.isCapsule
+                                      ? BoxShape.rectangle
+                                      : BoxShape.circle,
+                                  borderRadius: med.isCapsule
+                                      ? BorderRadius.circular(14)
+                                      : null,
+                                  border: Border.all(
+                                      color: med.pillColor, width: 2),
                                 ),
                                 child: Icon(
-                                  med.isCapsule ? Icons.medication_liquid : Icons.circle,
+                                  med.isCapsule
+                                      ? Icons.medication_liquid
+                                      : Icons.circle,
                                   color: med.pillColor,
                                   size: 20,
                                 ),
@@ -445,13 +469,19 @@ class _ElderDashboardState extends State<ElderDashboard> {
                                       style: TextStyle(
                                         fontSize: 16,
                                         fontWeight: FontWeight.bold,
-                                        decoration: med.isTaken ? TextDecoration.lineThrough : null,
-                                        color: med.isTaken ? Colors.grey : Colors.black87,
+                                        decoration: med.isTaken
+                                            ? TextDecoration.lineThrough
+                                            : null,
+                                        color: med.isTaken
+                                            ? Colors.grey
+                                            : Colors.black87,
                                       ),
                                     ),
                                     Text(
                                       '${med.purpose} · ${med.timing}',
-                                      style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                                      style: TextStyle(
+                                          fontSize: 12,
+                                          color: Colors.grey[600]),
                                     ),
                                   ],
                                 ),
@@ -462,8 +492,11 @@ class _ElderDashboardState extends State<ElderDashboard> {
                                   setModalState(() {});
                                 },
                                 icon: Icon(
-                                  med.isTaken ? Icons.check_circle : Icons.radio_button_unchecked,
-                                  color: med.isTaken ? _primaryGreen : Colors.grey,
+                                  med.isTaken
+                                      ? Icons.check_circle
+                                      : Icons.radio_button_unchecked,
+                                  color:
+                                      med.isTaken ? _primaryGreen : Colors.grey,
                                   size: 28,
                                 ),
                               ),
@@ -497,7 +530,8 @@ class _ElderDashboardState extends State<ElderDashboard> {
       builder: (sheetContext) {
         return StatefulBuilder(
           builder: (context, setModalState) {
-            _sosCountdownTimer ??= Timer.periodic(const Duration(seconds: 1), (timer) {
+            _sosCountdownTimer ??=
+                Timer.periodic(const Duration(seconds: 1), (timer) {
               if (_sosCountdown > 1) {
                 setModalState(() => _sosCountdown--);
               } else {
@@ -522,11 +556,13 @@ class _ElderDashboardState extends State<ElderDashboard> {
                     ),
                   ),
                   const SizedBox(height: 16),
-                  const Icon(Icons.warning_amber_rounded, size: 48, color: Colors.orange),
+                  const Icon(Icons.warning_amber_rounded,
+                      size: 48, color: Colors.orange),
                   const SizedBox(height: 12),
                   Text(
                     'Alerting Caregivers in $_sosCountdown s',
-                    style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                    style: const TextStyle(
+                        fontSize: 20, fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(height: 8),
                   Text(
@@ -546,9 +582,11 @@ class _ElderDashboardState extends State<ElderDashboard> {
                           },
                           style: OutlinedButton.styleFrom(
                             padding: const EdgeInsets.symmetric(vertical: 14),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12)),
                           ),
-                          child: const Text("I'm Okay (Cancel)", style: TextStyle(fontSize: 15)),
+                          child: const Text("I'm Okay (Cancel)",
+                              style: TextStyle(fontSize: 15)),
                         ),
                       ),
                       const SizedBox(width: 12),
@@ -563,9 +601,12 @@ class _ElderDashboardState extends State<ElderDashboard> {
                           style: ElevatedButton.styleFrom(
                             backgroundColor: _sosRed,
                             padding: const EdgeInsets.symmetric(vertical: 14),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12)),
                           ),
-                          child: const Text('Send Now', style: TextStyle(color: Colors.white, fontSize: 15)),
+                          child: const Text('Send Now',
+                              style:
+                                  TextStyle(color: Colors.white, fontSize: 15)),
                         ),
                       ),
                     ],
@@ -605,7 +646,8 @@ class _ElderDashboardState extends State<ElderDashboard> {
                 t.cancel();
                 _fallTimer = null;
                 Navigator.of(sheetContext, rootNavigator: true).pop();
-                _triggerSos(source: 'Autonomous Fall Detection (Kinematic Sensor)');
+                _triggerSos(
+                    source: 'Autonomous Fall Detection (Kinematic Sensor)');
               }
             });
 
@@ -649,7 +691,8 @@ class _ElderDashboardState extends State<ElderDashboard> {
                           onPressed: () {
                             _fallTimer?.cancel();
                             _fallTimer = null;
-                            Navigator.of(sheetContext, rootNavigator: true).pop();
+                            Navigator.of(sheetContext, rootNavigator: true)
+                                .pop();
                           },
                           style: OutlinedButton.styleFrom(
                             padding: const EdgeInsets.symmetric(vertical: 14),
@@ -660,7 +703,8 @@ class _ElderDashboardState extends State<ElderDashboard> {
                           ),
                           child: const Text(
                             "I'm Fine (Cancel)",
-                            style: TextStyle(fontSize: 15, color: Colors.black87),
+                            style:
+                                TextStyle(fontSize: 15, color: Colors.black87),
                           ),
                         ),
                       ),
@@ -670,7 +714,8 @@ class _ElderDashboardState extends State<ElderDashboard> {
                           onPressed: () {
                             _fallTimer?.cancel();
                             _fallTimer = null;
-                            Navigator.of(sheetContext, rootNavigator: true).pop();
+                            Navigator.of(sheetContext, rootNavigator: true)
+                                .pop();
                             _triggerSos(source: 'Elder Confirmed Fall Alert');
                           },
                           style: ElevatedButton.styleFrom(
@@ -701,54 +746,130 @@ class _ElderDashboardState extends State<ElderDashboard> {
     });
   }
 
+  // --- Autonomous Hospital SBAR Generator & Dispatcher ---
+  Future<void> _generateAndDispatchHospitalAdmission({
+    required dynamic emergencyId,
+    required String? elderId,
+    required String source,
+    required int bpm,
+    required int sys,
+    required int dia,
+    required double si,
+  }) async {
+    try {
+      // 1. Fetch elder clinical profile if available
+      Map<String, dynamic>? profile;
+      if (elderId != null) {
+        final profileRes = await Supabase.instance.client
+            .from('elder_clinical_profiles')
+            .select()
+            .eq('elder_id', elderId)
+            .order('created_at', ascending: false)
+            .limit(1)
+            .maybeSingle();
+        profile = profileRes;
+      }
+
+      // 2. Extract clinical context (defaults if profile hasn't been filled yet)
+      final List<dynamic> conditions = profile?['chronic_conditions'] ?? ['Hypertension'];
+      final bool onAnticoagulants = profile?['on_anticoagulants'] ?? false;
+      final String mobilityAid = profile?['mobility_aid'] ?? 'None';
+      final String riskLevel = profile?['risk_level'] ?? 'MODERATE';
+      final int riskScore = profile?['fall_risk_score'] ?? 4;
+
+      // 3. Clinical Stratification (Emergency Triage Protocol)
+      String triageLevel = 'YELLOW (Urgent)';
+      if (si >= 0.9 || onAnticoagulants && source.toLowerCase().contains('fall')) {
+        triageLevel = 'RED (Resuscitation)';
+      } else if (si < 0.7 && riskLevel == 'LOW') {
+        triageLevel = 'GREEN (Standard)';
+      }
+
+      // 4. Construct SBAR Briefing
+      final StringBuffer sbar = StringBuffer();
+
+      // [S] SITUATION
+      sbar.writeln('[S] SITUATION:');
+      sbar.writeln('Acute emergency triggered via "$source".');
+      sbar.writeln('Real-time vitals: Pulse $bpm BPM | BP $sys/$dia mmHg | Shock Index ${si.toStringAsFixed(2)}.');
+
+      // [B] BACKGROUND
+      sbar.writeln('\n[B] BACKGROUND:');
+      sbar.writeln('STEADI Fall Risk: $riskLevel (Score: $riskScore). Mobility support: $mobilityAid.');
+      sbar.writeln('Pre-existing conditions: ${conditions.isEmpty ? "None documented" : conditions.join(", ")}.');
+      sbar.writeln('Anticoagulant / Blood Thinners: ${onAnticoagulants ? "YES (Heightened hemorrhage vulnerability)" : "NO"}.');
+
+      // [A] ASSESSMENT
+      sbar.writeln('\n[A] ASSESSMENT:');
+      if (si >= 0.9) {
+        sbar.writeln('CRITICAL: Acute hemodynamic shock detected (SI: ${si.toStringAsFixed(2)} >= 0.90). High index of suspicion for hypovolemia or occult internal trauma.');
+      } else if (source.toLowerCase().contains('fall') || source.toLowerCase().contains('kinematic')) {
+        sbar.writeln('Mechanical trauma pattern. Potential skeletal fracture (femoral neck / pelvis) or cervical spine destabilization.');
+      } else {
+        sbar.writeln('Acute patient-reported distress. Hemodynamic metrics stable at point of transmission.');
+      }
+      if (onAnticoagulants) {
+        sbar.writeln('HIGH BLEED RISK: Patient on active anticoagulant therapy; elevated risk of rapid subdural hematoma.');
+      }
+
+      // [R] RECOMMENDATION
+      sbar.writeln('\n[R] RECOMMENDATION:');
+      if (triageLevel.startsWith('RED')) {
+        sbar.writeln('Prepare resuscitation bay immediately. Secure two large-bore IV lines (18G), prepare cross-matched packed RBCs, and schedule stat non-contrast head/pelvis CT.');
+      } else {
+        sbar.writeln('Assign emergency trauma cubicle. Obtain baseline 12-lead ECG, conduct secondary orthopedic survey, and monitor vitals q15min.');
+      }
+
+      // 5. Insert into Hospital Admissions Queue
+      await Supabase.instance.client.from('hospital_admissions').insert({
+        'emergency_id': emergencyId,
+        if (elderId != null) 'elder_id': elderId,
+        'hospital_name': 'District Trauma Center / MY Hospital',
+        'triage_level': triageLevel,
+        'pre_existing_conditions': conditions,
+        'on_blood_thinners': onAnticoagulants,
+        'vitals_snapshot': {
+          'heart_rate': bpm,
+          'systolic_bp': sys,
+          'diastolic_bp': dia,
+          'shock_index': double.parse(si.toStringAsFixed(2)),
+        },
+        'sbar_briefing': sbar.toString(),
+        'eta_minutes': 12,
+        'status': 'INCOMING',
+        'created_at': DateTime.now().toUtc().toIso8601String(),
+      });
+
+      debugPrint('[HOSPITAL ADMISSIONS] SBAR Handover logged for Emergency #$emergencyId ($triageLevel)');
+    } catch (e) {
+      debugPrint('[HOSPITAL ADMISSIONS ERROR] Failed to record handover: $e');
+    }
+  }
+
   Future<void> _triggerSos({
     String source = 'Manual SOS Button',
     String? location,
   }) async {
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Row(
-            children: [
-              SizedBox(
-                width: 18,
-                height: 18,
-                child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
-              ),
-              SizedBox(width: 12),
-              Text('Transmitting SOS to Responders...'),
-            ],
-          ),
-          backgroundColor: Colors.black87,
-          duration: Duration(seconds: 2),
-        ),
-      );
-    }
-
-    final user = Supabase.instance.client.auth.currentUser;
-    final String? elderId = user?.id;
-
-    double lat = _homeLat;
-    double lng = _homeLng;
+    setState(() => _isSendingSos = true);
 
     try {
-      Position? pos = await Geolocator.getLastKnownPosition();
-      pos ??= await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.low,
-        timeLimit: const Duration(seconds: 2),
-      );
-      if (pos != null) {
+      final user = Supabase.instance.client.auth.currentUser;
+      final elderId = user?.id;
+
+      double lat = 22.7196;
+      double lng = 75.8577;
+      String resolvedLocation = location ?? 'Indore, MP (Fallback)';
+
+      try {
+        final pos = await Geolocator.getCurrentPosition(
+          desiredAccuracy: LocationAccuracy.high,
+          timeLimit: const Duration(seconds: 4),
+        );
         lat = pos.latitude;
         lng = pos.longitude;
-      }
-    } catch (geoError) {
-      debugPrint('[GPS Warning] Fallback coordinates used: $geoError');
-    }
+        resolvedLocation = '${lat.toStringAsFixed(4)}, ${lng.toStringAsFixed(4)}';
+      } catch (_) {}
 
-    final String resolvedLocation =
-        location ?? '${lat.toStringAsFixed(4)}, ${lng.toStringAsFixed(4)}';
-
-    try {
       final payload = {
         if (elderId != null) 'elder_id': elderId,
         'status': 'OPEN',
@@ -763,43 +884,43 @@ class _ElderDashboardState extends State<ElderDashboard> {
         'created_at': DateTime.now().toUtc().toIso8601String(),
       };
 
-      final response = await Supabase.instance.client
+      // 1. Insert into Emergencies table and retrieve the new record ID
+      final res = await Supabase.instance.client
           .from('emergencies')
           .insert(payload)
-          .select();
+          .select('id')
+          .single();
 
-      debugPrint('[SOS SUCCESS] Inserted row: $response');
+      final emergencyId = res['id'];
+
+      // 2. Automatically dispatch SBAR handover to hospital database
+      await _generateAndDispatchHospitalAdmission(
+        emergencyId: emergencyId,
+        elderId: elderId,
+        source: source,
+        bpm: _bpm,
+        sys: _systolicBp,
+        dia: _diastolicBp,
+        si: _shockIndex,
+      );
 
       if (mounted) {
-        ScaffoldMessenger.of(context).hideCurrentSnackBar();
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Row(
-              children: [
-                Icon(Icons.check_circle, color: Colors.white),
-                SizedBox(width: 8),
-                Text('🚨 SOS Alert Live! Sent to Responders'),
-              ],
-            ),
-            backgroundColor: Color(0xFFD32F2F),
+            content: Text('EMERGENCY BROADCAST & HOSPITAL SBAR HANDOVER SENT!'),
+            backgroundColor: _sosRed,
             duration: Duration(seconds: 4),
-            behavior: SnackBarBehavior.floating,
           ),
         );
       }
-    } catch (dbError) {
-      debugPrint('[SOS DB Warning] Insert failed: $dbError');
+    } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).hideCurrentSnackBar();
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('SOS transmission note: $dbError'),
-            backgroundColor: const Color(0xFFD97706),
-            duration: const Duration(seconds: 4),
-            behavior: SnackBarBehavior.floating,
-          ),
+          SnackBar(content: Text('Dispatch Error: $e'), backgroundColor: Colors.red),
         );
       }
+    } finally {
+      if (mounted) setState(() => _isSendingSos = false);
     }
   }
 
@@ -810,7 +931,8 @@ class _ElderDashboardState extends State<ElderDashboard> {
       _diastolicBp = 100;
     });
     _showSosTriageDialog(
-      source: 'Hemodynamic Anomaly: Tachycardia (132 BPM) & Hypertension (160/100 mmHg)',
+      source:
+          'Hemodynamic Anomaly: Tachycardia (132 BPM) & Hypertension (160/100 mmHg)',
     );
   }
 
@@ -819,7 +941,8 @@ class _ElderDashboardState extends State<ElderDashboard> {
       context: context,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text('Logout', style: TextStyle(fontWeight: FontWeight.bold)),
+        title:
+            const Text('Logout', style: TextStyle(fontWeight: FontWeight.bold)),
         content: const Text('Are you sure you want to logout from SahayAyu?'),
         actions: [
           TextButton(
@@ -888,7 +1011,8 @@ class _ElderDashboardState extends State<ElderDashboard> {
                   ),
                 ),
                 const SizedBox(height: 2),
-                Text(_ambientSubtitle, style: TextStyle(fontSize: 13, color: Colors.grey[600])),
+                Text(_ambientSubtitle,
+                    style: TextStyle(fontSize: 13, color: Colors.grey[600])),
               ],
             ),
           ),
@@ -939,7 +1063,8 @@ class _ElderDashboardState extends State<ElderDashboard> {
                 children: [
                   Row(
                     children: [
-                      const Icon(Icons.favorite, color: Color(0xFFEA580C), size: 20),
+                      const Icon(Icons.favorite,
+                          color: Color(0xFFEA580C), size: 20),
                       const SizedBox(width: 8),
                       Text(
                         'Sandesh from $sender',
@@ -957,15 +1082,21 @@ class _ElderDashboardState extends State<ElderDashboard> {
                           .from('family_messages')
                           .update({'is_acknowledged': true}).eq('id', id);
                     },
-                    icon: const Icon(Icons.check, size: 16, color: Color(0xFF0F765E)),
+                    icon: const Icon(Icons.check,
+                        size: 16, color: Color(0xFF0F765E)),
                     label: const Text(
                       'Received ❤️',
-                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF0F765E)),
+                      style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFF0F765E)),
                     ),
                     style: TextButton.styleFrom(
                       backgroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 4),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8)),
                     ),
                   ),
                 ],
@@ -973,7 +1104,11 @@ class _ElderDashboardState extends State<ElderDashboard> {
               const SizedBox(height: 6),
               Text(
                 message,
-                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: Colors.black87, height: 1.3),
+                style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.black87,
+                    height: 1.3),
               ),
             ],
           ),
@@ -996,14 +1131,19 @@ class _ElderDashboardState extends State<ElderDashboard> {
         children: [
           Row(
             children: [
-              Icon(Icons.share_location, color: _isLiveLocationEnabled ? _primaryGreen : Colors.grey),
+              Icon(Icons.share_location,
+                  color: _isLiveLocationEnabled ? _primaryGreen : Colors.grey),
               const SizedBox(width: 12),
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('Live Location Sharing', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                  const Text('Live Location Sharing',
+                      style:
+                          TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
                   Text(
-                    _isLiveLocationEnabled ? 'Family can view live map' : 'Sharing is off',
+                    _isLiveLocationEnabled
+                        ? 'Family can view live map'
+                        : 'Sharing is off',
                     style: TextStyle(fontSize: 12, color: Colors.grey[600]),
                   ),
                 ],
@@ -1039,16 +1179,21 @@ class _ElderDashboardState extends State<ElderDashboard> {
               color: const Color(0xFFF3E8FF),
               borderRadius: BorderRadius.circular(12),
             ),
-            child: const Icon(Icons.medication_rounded, color: Color(0xFF7E22CE), size: 22),
+            child: const Icon(Icons.medication_rounded,
+                color: Color(0xFF7E22CE), size: 22),
           ),
           const SizedBox(width: 14),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('Daily Medicines', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                const Text('Daily Medicines',
+                    style:
+                        TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
                 Text(
-                  pending == 0 ? 'All doses taken for today' : '$pending pending · Tap to check off',
+                  pending == 0
+                      ? 'All doses taken for today'
+                      : '$pending pending · Tap to check off',
                   style: TextStyle(fontSize: 12, color: Colors.grey[600]),
                 ),
               ],
@@ -1058,7 +1203,8 @@ class _ElderDashboardState extends State<ElderDashboard> {
             onPressed: _showMedicationSheet,
             style: TextButton.styleFrom(
               foregroundColor: const Color(0xFF7E22CE),
-              textStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+              textStyle:
+                  const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
             ),
             child: const Text('View All'),
           ),
@@ -1077,7 +1223,8 @@ class _ElderDashboardState extends State<ElderDashboard> {
               onTap: () => _makeDirectCall('+919876543210', 'Family'),
               borderRadius: BorderRadius.circular(16),
               child: Container(
-                padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 12),
+                padding:
+                    const EdgeInsets.symmetric(vertical: 14, horizontal: 12),
                 decoration: BoxDecoration(
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(16),
@@ -1094,16 +1241,22 @@ class _ElderDashboardState extends State<ElderDashboard> {
                   children: [
                     Container(
                       padding: const EdgeInsets.all(8),
-                      decoration: const BoxDecoration(color: Color(0xFFE8F5E9), shape: BoxShape.circle),
-                      child: const Icon(Icons.phone_in_talk, color: _primaryGreen, size: 20),
+                      decoration: const BoxDecoration(
+                          color: Color(0xFFE8F5E9), shape: BoxShape.circle),
+                      child: const Icon(Icons.phone_in_talk,
+                          color: _primaryGreen, size: 20),
                     ),
                     const SizedBox(width: 10),
                     const Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('Call Family', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                          Text('Tap to dial', style: TextStyle(fontSize: 11, color: Colors.grey)),
+                          Text('Call Family',
+                              style: TextStyle(
+                                  fontWeight: FontWeight.bold, fontSize: 13)),
+                          Text('Tap to dial',
+                              style:
+                                  TextStyle(fontSize: 11, color: Colors.grey)),
                         ],
                       ),
                     ),
@@ -1118,7 +1271,8 @@ class _ElderDashboardState extends State<ElderDashboard> {
               onTap: () => _makeDirectCall('+919123456789', 'Doctor'),
               borderRadius: BorderRadius.circular(16),
               child: Container(
-                padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 12),
+                padding:
+                    const EdgeInsets.symmetric(vertical: 14, horizontal: 12),
                 decoration: BoxDecoration(
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(16),
@@ -1135,16 +1289,22 @@ class _ElderDashboardState extends State<ElderDashboard> {
                   children: [
                     Container(
                       padding: const EdgeInsets.all(8),
-                      decoration: const BoxDecoration(color: Color(0xFFE3F2FD), shape: BoxShape.circle),
-                      child: const Icon(Icons.medical_services_outlined, color: Colors.blue, size: 20),
+                      decoration: const BoxDecoration(
+                          color: Color(0xFFE3F2FD), shape: BoxShape.circle),
+                      child: const Icon(Icons.medical_services_outlined,
+                          color: Colors.blue, size: 20),
                     ),
                     const SizedBox(width: 10),
                     const Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('Call Doctor', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                          Text('Dr. Sharma', style: TextStyle(fontSize: 11, color: Colors.grey)),
+                          Text('Call Doctor',
+                              style: TextStyle(
+                                  fontWeight: FontWeight.bold, fontSize: 13)),
+                          Text('Dr. Sharma',
+                              style:
+                                  TextStyle(fontSize: 11, color: Colors.grey)),
                         ],
                       ),
                     ),
@@ -1224,7 +1384,7 @@ class _ElderDashboardState extends State<ElderDashboard> {
       ),
     );
   }
-  
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -1234,12 +1394,27 @@ class _ElderDashboardState extends State<ElderDashboard> {
         elevation: 1,
         title: const Text(
           'SahayAyu Senior Care',
-          style: TextStyle(color: _primaryGreen, fontWeight: FontWeight.bold, fontSize: 20),
+          style: TextStyle(
+              color: _primaryGreen, fontWeight: FontWeight.bold, fontSize: 20),
         ),
         actions: [
           IconButton(
             icon: const Icon(Icons.logout, color: Colors.black87),
             onPressed: _showLogoutDialog,
+          ),
+          IconButton(
+            icon:
+                const Icon(Icons.assignment_ind_outlined, color: _primaryGreen),
+            tooltip: 'Clinical Intake Profile',
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) =>
+                    ClinicalIntakeScreen(isInitialOnboarding: false),
+                ),
+              );
+            },
           ),
         ],
       ),
@@ -1260,7 +1435,8 @@ class _ElderDashboardState extends State<ElderDashboard> {
 
               // Dual Biometrics Card (Pulse + Blood Pressure + Shock Index)
               Container(
-                padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 18),
+                padding:
+                    const EdgeInsets.symmetric(vertical: 16, horizontal: 18),
                 decoration: BoxDecoration(
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(18),
@@ -1307,11 +1483,14 @@ class _ElderDashboardState extends State<ElderDashboard> {
                                   style: TextStyle(
                                     fontSize: 22,
                                     fontWeight: FontWeight.bold,
-                                    color: _bpm > 110 ? _sosRed : Colors.black87,
+                                    color:
+                                        _bpm > 110 ? _sosRed : Colors.black87,
                                   ),
                                 ),
                                 Text(
-                                  _bpm > 110 ? 'Elevated Pulse' : 'Resting Pulse',
+                                  _bpm > 110
+                                      ? 'Elevated Pulse'
+                                      : 'Resting Pulse',
                                   style: TextStyle(
                                     fontSize: 12,
                                     color: Colors.grey[600],
@@ -1323,7 +1502,8 @@ class _ElderDashboardState extends State<ElderDashboard> {
                         ),
 
                         // Vertical Divider
-                        Container(height: 40, width: 1, color: Colors.grey.shade200),
+                        Container(
+                            height: 40, width: 1, color: Colors.grey.shade200),
 
                         // Right Column: Blood Pressure
                         Row(
@@ -1353,9 +1533,10 @@ class _ElderDashboardState extends State<ElderDashboard> {
                                   style: TextStyle(
                                     fontSize: 22,
                                     fontWeight: FontWeight.bold,
-                                    color: (_systolicBp > 140 || _systolicBp < 90)
-                                        ? _sosRed
-                                        : Colors.black87,
+                                    color:
+                                        (_systolicBp > 140 || _systolicBp < 90)
+                                            ? _sosRed
+                                            : Colors.black87,
                                   ),
                                 ),
                                 const Text(
@@ -1382,18 +1563,25 @@ class _ElderDashboardState extends State<ElderDashboard> {
                       children: [
                         Row(
                           children: [
-                            const Icon(Icons.bluetooth_connected, size: 16, color: _primaryGreen),
+                            const Icon(Icons.bluetooth_connected,
+                                size: 16, color: _primaryGreen),
                             const SizedBox(width: 6),
                             const Text(
                               'Smart Band Connected',
-                              style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: _primaryGreen),
+                              style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                  color: _primaryGreen),
                             ),
                           ],
                         ),
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 3),
                           decoration: BoxDecoration(
-                            color: _shockIndex >= 0.9 ? const Color(0xFFFEE2E2) : const Color(0xFFF1F5F9),
+                            color: _shockIndex >= 0.9
+                                ? const Color(0xFFFEE2E2)
+                                : const Color(0xFFF1F5F9),
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: Text(
@@ -1401,7 +1589,9 @@ class _ElderDashboardState extends State<ElderDashboard> {
                             style: TextStyle(
                               fontSize: 11,
                               fontWeight: FontWeight.bold,
-                              color: _shockIndex >= 0.9 ? _sosRed : const Color(0xFF475569),
+                              color: _shockIndex >= 0.9
+                                  ? _sosRed
+                                  : const Color(0xFF475569),
                             ),
                           ),
                         ),
@@ -1446,7 +1636,9 @@ class _ElderDashboardState extends State<ElderDashboard> {
                             letterSpacing: 1.2,
                           ),
                         ),
-                        Text('Tap for emergency', style: TextStyle(color: Colors.white70, fontSize: 12)),
+                        Text('Tap for emergency',
+                            style:
+                                TextStyle(color: Colors.white70, fontSize: 12)),
                       ],
                     ),
                   ),
@@ -1463,7 +1655,8 @@ class _ElderDashboardState extends State<ElderDashboard> {
                   onPressed: () {
                     Navigator.push(
                       context,
-                      MaterialPageRoute(builder: (context) => const AiChatScreen()),
+                      MaterialPageRoute(
+                          builder: (context) => const AiChatScreen()),
                     );
                   },
                   icon: const Icon(Icons.chat_bubble_outline, size: 20),
@@ -1474,7 +1667,8 @@ class _ElderDashboardState extends State<ElderDashboard> {
                   style: ElevatedButton.styleFrom(
                     backgroundColor: _primaryGreen,
                     foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14)),
                   ),
                 ),
               ),
@@ -1483,7 +1677,8 @@ class _ElderDashboardState extends State<ElderDashboard> {
               // Fall Simulation Button
               TextButton.icon(
                 onPressed: _showFallVerificationDialog,
-                icon: const Icon(Icons.personal_injury, size: 16, color: Colors.orange),
+                icon: const Icon(Icons.personal_injury,
+                    size: 16, color: Colors.orange),
                 label: const Text(
                   'Demo: Simulate Kinematic Fall Detection',
                   style: TextStyle(color: Colors.orange, fontSize: 12),
@@ -1495,7 +1690,8 @@ class _ElderDashboardState extends State<ElderDashboard> {
                 onPressed: () => _showSosTriageDialog(
                   source: 'Voice Distress Detected ("BACHAO")',
                 ),
-                icon: const Icon(Icons.record_voice_over, size: 16, color: Colors.purple),
+                icon: const Icon(Icons.record_voice_over,
+                    size: 16, color: Colors.purple),
                 label: const Text(
                   'Demo: Simulate Voice Distress ("Bachao")',
                   style: TextStyle(color: Colors.purple, fontSize: 12),

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_generative_ai/google_generative_ai.dart';
 
-const String geminiApiKey = 'YOUR_GEMINI_API_KEY';
+const String GEMINI_API_KEY = 'YOUR_GEMINI_API_KEY';
 
 class AiChatScreen extends StatefulWidget {
   const AiChatScreen({super.key});

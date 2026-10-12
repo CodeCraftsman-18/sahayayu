@@ -4,6 +4,7 @@ import 'elder_dashboard.dart';
 import 'guardian_dashboard.dart';
 import 'volunteer_dashboard.dart';
 import 'register_screen.dart';
+import 'clinical_intake_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -164,6 +165,37 @@ Future<void> _handleLogin() async {
     if (mounted) {
       setState(() => _isLoading = false);
     }
+  }
+}
+
+// Inside your login/role routing logic in login_screen.dart:
+Future<void> _routeUser(String role) async {
+  if (role == 'Elder') {
+    final user = Supabase.instance.client.auth.currentUser;
+    bool hasProfile = false;
+
+    if (user != null) {
+      final res = await Supabase.instance.client
+          .from('elder_clinical_profiles')
+          .select('id')
+          .eq('elder_id', user.id)
+          .maybeSingle();
+      hasProfile = res != null;
+    }
+
+    if (!hasProfile && mounted) {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => ClinicalIntakeScreen(isInitialOnboarding: true)),
+      );
+    } else if (mounted) {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => const ElderDashboard()),
+      );
+    }
+  } else {
+    // Navigate to Volunteer / Guardian
   }
 }
 
