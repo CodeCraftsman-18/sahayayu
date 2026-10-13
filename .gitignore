@@ -63,3 +63,7 @@ pose_landmarker_lite.task
 .env
 *.env.local
 secrets.json
+
+# Application logs
+logs/
+*.log
