@@ -14,6 +14,17 @@ import time
 import urllib.request
 from datetime import datetime, timezone
 from supabase import create_client, Client
+from dotenv import load_dotenv
+
+load_dotenv()
+CAMERA_STREAM_URL = os.getenv("http://192.168.1.11:8080/video")
+SUPABASE_URL = os.getenv("https://xjvxzjhsmhprbkwuwpou.supabase.co")
+SUPABASE_KEY = os.getenv("eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inhqdnh6amhzbWhwcmJrd3V3cG91Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODYyNTcxMzcsImV4cCI6MjEwMTgzMzEzN30.MgaT33q9Pgg0F8syxoj58VXBx1CUxXBQCw8zc9Dy00E")
+
+if not all([CAMERA_STREAM_URL, SUPABASE_URL, SUPABASE_KEY]):
+    print("\n[CRITICAL ERROR] Missing required environment variables.")
+    print("Ensure you have created a valid .env file based on .env.example.\n")
+    sys.exit(1)
 
 # ==========================================
 # 1. ZERO-LATENCY THREADED FRAME GRABBER

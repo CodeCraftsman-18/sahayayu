@@ -4,10 +4,16 @@ import 'screens/elder_dashboard.dart';
 import 'screens/login_screen.dart';
 import 'services/emergency_outbox_service.dart';
 import 'services/notification_service.dart';
+import 'core/app_config.dart';
 
 void main() async {
   // 1. Ensure Flutter bindings are ready
   WidgetsFlutterBinding.ensureInitialized();
+  AppConfig.validate();
+  await Supabase.initialize(
+    url: AppConfig.supabaseUrl,
+    anonKey: AppConfig.supabaseAnonKey,
+  );
 
   // 2. Initialize Supabase
   try {

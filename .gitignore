@@ -58,4 +58,8 @@ __pycache__/
 *.py[cod]
 *$py.class
 pose_landmarker_lite.task
+
+# Environment secrets
 .env
+*.env.local
+secrets.json
