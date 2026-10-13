@@ -31,12 +31,11 @@ jobs:
 
       - name: Lint Python Sentinel
         run: |
-          # Stop the build if there are Python syntax errors or undefined names
           flake8 cctv_sentinel.py sentinel_daemon.py --count --select=E9,F63,F7,F82 --show-source --statistics
 
       # Flutter Analysis
       - name: Set up Java 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: 'zulu'
           java-version: '17'
@@ -71,7 +70,7 @@ jobs:
           fetch-depth: 0
 
       - name: Set up Java 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: 'zulu'
           java-version: '17'
@@ -86,10 +85,10 @@ jobs:
         run: flutter pub get
 
       - name: Build Production Release APK
-        run: |
-          flutter build apk --release \
-            --dart-define=SUPABASE_URL=${{ secrets.SUPABASE_URL }} \
-            --dart-define=SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: flutter build apk --release --dart-define=SUPABASE_URL="$SUPABASE_URL" --dart-define=SUPABASE_ANON_KEY="$SUPABASE_ANON_KEY"
 
       - name: Rename APK Artifact
         run: |
