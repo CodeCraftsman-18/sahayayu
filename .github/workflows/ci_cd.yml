@@ -2,9 +2,9 @@ name: SahayAyu Production CI/CD Pipeline
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   pull_request:
-    branches: [ main ]
+    branches: [main]
 
 jobs:
   # =======================================================
@@ -22,7 +22,7 @@ jobs:
       - name: Set up Python 3.11
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: "3.11"
 
       - name: Install Python Linters
         run: |
@@ -37,13 +37,13 @@ jobs:
       - name: Set up Java 17
         uses: actions/setup-java@v5
         with:
-          distribution: 'zulu'
-          java-version: '17'
+          distribution: "zulu"
+          java-version: "17"
 
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
-          channel: 'stable'
+          channel: "stable"
           cache: true
 
       - name: Install Flutter Packages
@@ -72,13 +72,13 @@ jobs:
       - name: Set up Java 17
         uses: actions/setup-java@v5
         with:
-          distribution: 'zulu'
-          java-version: '17'
+          distribution: "zulu"
+          java-version: "17"
 
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
-          channel: 'stable'
+          channel: "stable"
           cache: true
 
       - name: Install Dependencies
@@ -86,9 +86,25 @@ jobs:
 
       - name: Build Production Release APK
         env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
-        run: flutter build apk --release --dart-define=SUPABASE_URL="$SUPABASE_URL" --dart-define=SUPABASE_ANON_KEY="$SUPABASE_ANON_KEY"
+          RAW_URL: ${{ secrets.SUPABASE_URL }}
+          RAW_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          # Strip accidental newlines, carriage returns, and spaces from secrets
+          CLEAN_URL=$(echo -n "$RAW_URL" | tr -d '\r\n ')
+          CLEAN_KEY=$(echo -n "$RAW_KEY" | tr -d '\r\n ')
+
+          # Fallback to defaults if GitHub Secret was empty or missing
+          if [ -z "$CLEAN_URL" ]; then
+            CLEAN_URL="https://xjvxzjhsmhprbkwuwpou.supabase.co"
+          fi
+          if [ -z "$CLEAN_KEY" ]; then
+            CLEAN_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inhqdnh6amhzbWhwcmJrd3V3cG91Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODYyNTcxMzcsImV4cCI6MjEwMTgzMzEzN30.MgaT33q9Pgg0F8syxoj58VXBx1CUxXBQCw8zc9Dy00E"
+          fi
+
+          flutter build apk --release \
+            --target=lib/main.dart \
+            --dart-define=SUPABASE_URL="$CLEAN_URL" \
+            --dart-define=SUPABASE_ANON_KEY="$CLEAN_KEY"
 
       - name: Rename APK Artifact
         run: |
