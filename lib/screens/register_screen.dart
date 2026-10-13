@@ -63,7 +63,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
             break;
           case 'Elder':
           default:
-            targetDashboard = ElderDashboard();
+            targetDashboard = const ElderDashboard();
             break;
         }
 
@@ -171,7 +171,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   ),
                   const SizedBox(height: 8),
                   DropdownButtonFormField<String>(
-                    value: _selectedRole,
+                    initialValue: _selectedRole,
                     decoration: InputDecoration(
                       prefixIcon: const Icon(Icons.groups_outlined),
                       border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),

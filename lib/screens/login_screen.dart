@@ -4,7 +4,6 @@ import 'elder_dashboard.dart';
 import 'guardian_dashboard.dart';
 import 'volunteer_dashboard.dart';
 import 'register_screen.dart';
-import 'clinical_intake_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -102,7 +101,7 @@ Future<void> _handleLogin() async {
     } else if (role == 'volunteer') {
       targetDashboard = const VolunteerDashboard(); // <-- Added this route
     } else {
-      targetDashboard = ElderDashboard();
+      targetDashboard = const ElderDashboard();
     }
 
     Navigator.pushReplacement(
@@ -111,93 +110,6 @@ Future<void> _handleLogin() async {
     );
   }
   
-  Future<void> _signIn() async {
-  final email = _emailController.text.trim();
-  final password = _passwordController.text.trim();
-
-  if (email.isEmpty || password.isEmpty) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Please enter your email and password.')),
-    );
-    return;
-  }
-
-  setState(() => _isLoading = true);
-
-  try {
-    final response = await Supabase.instance.client.auth.signInWithPassword(
-      email: email,
-      password: password,
-    );
-
-    if (response.session != null && mounted) {
-      // Determine user role and route to the corresponding dashboard
-      _navigateToDashboard();
-    }
-  } on AuthException catch (e) {
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(e.message),
-          backgroundColor: Colors.red,
-        ),
-      );
-    }
-  } catch (e) {
-    // Catches SocketException, ClientException, and DNS failures when offline
-    if (mounted) {
-      final isOffline = e.toString().contains('SocketException') ||
-          e.toString().contains('Failed host lookup') ||
-          e.toString().contains('ClientException');
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            isOffline
-                ? 'No internet connection. Please turn on Wi-Fi or Mobile Data to sign in.'
-                : 'Login failed. Please check your credentials.',
-          ),
-          backgroundColor: const Color(0xFFD97706),
-        ),
-      );
-    }
-  } finally {
-    if (mounted) {
-      setState(() => _isLoading = false);
-    }
-  }
-}
-
-// Inside your login/role routing logic in login_screen.dart:
-Future<void> _routeUser(String role) async {
-  if (role == 'Elder') {
-    final user = Supabase.instance.client.auth.currentUser;
-    bool hasProfile = false;
-
-    if (user != null) {
-      final res = await Supabase.instance.client
-          .from('elder_clinical_profiles')
-          .select('id')
-          .eq('elder_id', user.id)
-          .maybeSingle();
-      hasProfile = res != null;
-    }
-
-    if (!hasProfile && mounted) {
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (context) => ClinicalIntakeScreen(isInitialOnboarding: true)),
-      );
-    } else if (mounted) {
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (context) => const ElderDashboard()),
-      );
-    }
-  } else {
-    // Navigate to Volunteer / Guardian
-  }
-}
 
   @override
   Widget build(BuildContext context) {

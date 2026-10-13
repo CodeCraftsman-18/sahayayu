@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_generative_ai/google_generative_ai.dart';
 
-const String GEMINI_API_KEY = 'YOUR_GEMINI_API_KEY';
+const String geminiApiKey = '...';
 
 class AiChatScreen extends StatefulWidget {
   const AiChatScreen({super.key});
@@ -57,7 +57,7 @@ class _AiChatScreenState extends State<AiChatScreen> {
       try {
         final model = GenerativeModel(
           model: modelName,
-          apiKey: GEMINI_API_KEY,
+          apiKey: geminiApiKey,
           systemInstruction: Content.system(_systemInstruction),
         );
 
@@ -161,7 +161,7 @@ class _AiChatScreenState extends State<AiChatScreen> {
                       border: isUser ? null : Border.all(color: Colors.grey.shade200),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black.withOpacity(0.04),
+                          color: Colors.black.withValues(alpha: 0.04),
                           blurRadius: 4,
                           offset: const Offset(0, 2),
                         ),

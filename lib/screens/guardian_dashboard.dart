@@ -22,7 +22,6 @@ class _GuardianDashboardState extends State<GuardianDashboard> with WidgetsBindi
   late Stream<List<Map<String, dynamic>>> _locationStream;
 
   Timer? _reconciliationTimer;
-  DateTime? _lastSuccessfulSyncUtc;
   bool _isReconciling = false;
 
   @override
@@ -93,7 +92,6 @@ class _GuardianDashboardState extends State<GuardianDashboard> with WidgetsBindi
 
       if (mounted) {
         setState(() {
-          _lastSuccessfulSyncUtc = DateTime.now().toUtc();
         });
       }
     } catch (e) {
@@ -247,7 +245,7 @@ class _GuardianDashboardState extends State<GuardianDashboard> with WidgetsBindi
                       return ChoiceChip(
                         label: Text(preset, style: const TextStyle(fontSize: 12)),
                         selected: isSelected,
-                        selectedColor: _primaryGreen.withOpacity(0.18),
+                        selectedColor: _primaryGreen.withValues(alpha: 0.18),
                         onSelected: (val) {
                           setModalState(() {
                             selectedPreset = val ? preset : '';
@@ -408,7 +406,7 @@ class _GuardianDashboardState extends State<GuardianDashboard> with WidgetsBindi
         border: Border.all(color: _sosRed, width: 2),
         boxShadow: [
           BoxShadow(
-            color: _sosRed.withOpacity(0.2),
+            color: _sosRed.withValues(alpha: 0.2),
             blurRadius: 14,
             offset: const Offset(0, 4),
           ),
@@ -573,10 +571,10 @@ class _GuardianDashboardState extends State<GuardianDashboard> with WidgetsBindi
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: _primaryGreen.withOpacity(0.3)),
+            border: Border.all(color: _primaryGreen.withValues(alpha: 0.3)),
             boxShadow: [
               BoxShadow(
-                color: _primaryGreen.withOpacity(0.08),
+                color: _primaryGreen.withValues(alpha: 0.08),
                 blurRadius: 10,
                 offset: const Offset(0, 4),
               ),
@@ -774,7 +772,7 @@ class _GuardianDashboardState extends State<GuardianDashboard> with WidgetsBindi
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(14),
                 border: Border.all(
-                  color: isOpen ? _sosRed.withOpacity(0.3) : Colors.grey.shade200,
+                  color: isOpen ? _sosRed.withValues(alpha: 0.3) : Colors.grey.shade200,
                   width: isOpen ? 1.5 : 1,
                 ),
               ),

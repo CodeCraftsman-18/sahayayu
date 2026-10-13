@@ -9,8 +9,9 @@ import 'ai_chat_screen.dart';
 import '../services/fall_detection_service.dart';
 import '../services/voice_sos_service.dart';
 import 'clinical_intake_screen.dart';
+bool _isSendingSos = false;
 
-// --- Top-Level Model ---
+
 class MedicationItem {
   final String id;
   final String name;
@@ -19,7 +20,6 @@ class MedicationItem {
   final Color pillColor;
   final bool isCapsule;
   bool isTaken;
-  
 
   MedicationItem({
     required this.id,
@@ -47,12 +47,10 @@ class _ElderDashboardState extends State<ElderDashboard> {
 
   int _systolicBp = 120;
   int _diastolicBp = 80;
-  bool _isSendingSos = false;
 
-  // Shock Index: Heart Rate / Systolic BP (Normal: 0.5 - 0.7; Critical: >= 0.9)
   double get _shockIndex => _systolicBp > 0 ? _bpm / _systolicBp : 0.63;
 
-  bool _isMonitoring = true;
+  final bool _isMonitoring = true;
   Timer? _timer;
   Timer? _sosCountdownTimer;
   int _sosCountdown = 10;
@@ -432,7 +430,7 @@ class _ElderDashboardState extends State<ElderDashboard> {
                             border: Border.all(
                               color: med.isTaken
                                   ? Colors.grey.shade300
-                                  : _primaryGreen.withOpacity(0.3),
+                                  : _primaryGreen.withValues(alpha: 0.3),
                             ),
                           ),
                           child: Row(
@@ -441,7 +439,7 @@ class _ElderDashboardState extends State<ElderDashboard> {
                                 width: 44,
                                 height: 44,
                                 decoration: BoxDecoration(
-                                  color: med.pillColor.withOpacity(0.18),
+                                  color: med.pillColor.withValues(alpha: 0.18),
                                   shape: med.isCapsule
                                       ? BoxShape.rectangle
                                       : BoxShape.circle,
@@ -850,6 +848,8 @@ class _ElderDashboardState extends State<ElderDashboard> {
     String source = 'Manual SOS Button',
     String? location,
   }) async {
+    if (_isSendingSos) return;
+    _isSendingSos = true;
     setState(() => _isSendingSos = true);
 
     try {
@@ -978,10 +978,10 @@ class _ElderDashboardState extends State<ElderDashboard> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: _ambientAccent.withOpacity(0.2)),
+        border: Border.all(color: _ambientAccent.withValues(alpha: 0.2)),
         boxShadow: [
           BoxShadow(
-            color: _ambientAccent.withOpacity(0.06),
+            color: _ambientAccent.withValues(alpha: 0.06),
             blurRadius: 12,
             offset: const Offset(0, 4),
           ),
@@ -992,7 +992,7 @@ class _ElderDashboardState extends State<ElderDashboard> {
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: _ambientAccent.withOpacity(0.12),
+              color: _ambientAccent.withValues(alpha: 0.12),
               shape: BoxShape.circle,
             ),
             child: Icon(_ambientIcon, color: _ambientAccent, size: 26),
@@ -1049,7 +1049,7 @@ class _ElderDashboardState extends State<ElderDashboard> {
             border: Border.all(color: const Color(0xFFFDBA74), width: 1.5),
             boxShadow: [
               BoxShadow(
-                color: const Color(0xFFEA580C).withOpacity(0.08),
+                color: const Color(0xFFEA580C).withValues(alpha: 0.08),
                 blurRadius: 10,
                 offset: const Offset(0, 3),
               ),
@@ -1152,7 +1152,7 @@ class _ElderDashboardState extends State<ElderDashboard> {
           ),
           Switch(
             value: _isLiveLocationEnabled,
-            activeColor: _primaryGreen,
+            activeThumbColor: _primaryGreen,
             onChanged: _toggleLiveLocationSharing,
           ),
         ],
@@ -1228,10 +1228,10 @@ class _ElderDashboardState extends State<ElderDashboard> {
                 decoration: BoxDecoration(
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: _primaryGreen.withOpacity(0.3)),
+                  border: Border.all(color: _primaryGreen.withValues(alpha: 0.3)),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.02),
+                      color: Colors.black.withValues(alpha: 0.02),
                       blurRadius: 8,
                       offset: const Offset(0, 2),
                     ),
@@ -1276,10 +1276,10 @@ class _ElderDashboardState extends State<ElderDashboard> {
                 decoration: BoxDecoration(
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: Colors.blue.withOpacity(0.3)),
+                  border: Border.all(color: Colors.blue.withValues(alpha: 0.3)),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.02),
+                      color: Colors.black.withValues(alpha: 0.02),
                       blurRadius: 8,
                       offset: const Offset(0, 2),
                     ),
@@ -1370,7 +1370,7 @@ class _ElderDashboardState extends State<ElderDashboard> {
           ),
           Switch(
             value: _isVoiceSentinelActive,
-            activeColor: _primaryGreen,
+            activeThumbColor: _primaryGreen,
             onChanged: (val) async {
               setState(() => _isVoiceSentinelActive = val);
               if (val) {
@@ -1411,7 +1411,7 @@ class _ElderDashboardState extends State<ElderDashboard> {
                 context,
                 MaterialPageRoute(
                   builder: (context) =>
-                    ClinicalIntakeScreen(isInitialOnboarding: false),
+                    const ClinicalIntakeScreen(isInitialOnboarding: false),
                 ),
               );
             },
@@ -1446,7 +1446,7 @@ class _ElderDashboardState extends State<ElderDashboard> {
                   ),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.03),
+                      color: Colors.black.withValues(alpha: 0.03),
                       blurRadius: 10,
                       offset: const Offset(0, 3),
                     ),
@@ -1561,12 +1561,12 @@ class _ElderDashboardState extends State<ElderDashboard> {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Row(
+                        const Row(
                           children: [
-                            const Icon(Icons.bluetooth_connected,
+                            Icon(Icons.bluetooth_connected,
                                 size: 16, color: _primaryGreen),
-                            const SizedBox(width: 6),
-                            const Text(
+                            SizedBox(width: 6),
+                            Text(
                               'Smart Band Connected',
                               style: TextStyle(
                                   fontSize: 12,
@@ -1614,7 +1614,7 @@ class _ElderDashboardState extends State<ElderDashboard> {
                     color: _sosRed,
                     boxShadow: [
                       BoxShadow(
-                        color: _sosRed.withOpacity(0.32),
+                        color: _sosRed.withValues(alpha: 0.32),
                         blurRadius: 26,
                         spreadRadius: 6,
                         offset: const Offset(0, 6),

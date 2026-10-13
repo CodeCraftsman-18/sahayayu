@@ -180,7 +180,7 @@ class _ClinicalIntakeScreenState extends State<ClinicalIntakeScreen> {
               decoration: BoxDecoration(
                 color: const Color(0xFFE8F5E9),
                 borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: _primaryGreen.withOpacity(0.3)),
+                border: Border.all(color: _primaryGreen.withValues(alpha: 0.3)),
               ),
               child: Row(
                 children: [
@@ -222,7 +222,7 @@ class _ClinicalIntakeScreenState extends State<ClinicalIntakeScreen> {
                   ),
                 ),
                 value: _priorFalls,
-                activeColor: _alertRed,
+                activeThumbColor: _alertRed,
                 onChanged: (val) => setState(() => _priorFalls = val),
               ),
             ),
@@ -268,7 +268,7 @@ class _ClinicalIntakeScreenState extends State<ClinicalIntakeScreen> {
                   ),
                 ),
                 value: _onAnticoagulants,
-                activeColor: _alertRed,
+                activeThumbColor: _alertRed,
                 onChanged: (val) => setState(() => _onAnticoagulants = val),
               ),
             ),
@@ -289,7 +289,7 @@ class _ClinicalIntakeScreenState extends State<ClinicalIntakeScreen> {
                   ),
                 ),
                 value: _frequentDizziness,
-                activeColor: _warningOrange,
+                activeThumbColor: _warningOrange,
                 onChanged: (val) => setState(() => _frequentDizziness = val),
               ),
             ),
@@ -327,7 +327,7 @@ class _ClinicalIntakeScreenState extends State<ClinicalIntakeScreen> {
                 border: Border.all(color: _riskColor, width: 1.5),
                 boxShadow: [
                   BoxShadow(
-                    color: _riskColor.withOpacity(0.08),
+                    color: _riskColor.withValues(alpha: 0.08),
                     blurRadius: 10,
                     offset: const Offset(0, 3),
                   ),
@@ -353,7 +353,7 @@ class _ClinicalIntakeScreenState extends State<ClinicalIntakeScreen> {
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                     decoration: BoxDecoration(
-                      color: _riskColor.withOpacity(0.12),
+                      color: _riskColor.withValues(alpha: 0.12),
                       borderRadius: BorderRadius.circular(20),
                     ),
                     child: Text(

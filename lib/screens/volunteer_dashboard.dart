@@ -234,7 +234,7 @@ class _VolunteerDashboardState extends State<VolunteerDashboard> {
                             child: Row(
                               children: [
                                 CircleAvatar(
-                                  backgroundColor: _primaryGreen.withOpacity(0.12),
+                                  backgroundColor: _primaryGreen.withValues(alpha: 0.12),
                                   child: Text(
                                     '${i + 1}',
                                     style: const TextStyle(color: _primaryGreen, fontWeight: FontWeight.bold),
@@ -326,7 +326,7 @@ class _VolunteerDashboardState extends State<VolunteerDashboard> {
       decoration: BoxDecoration(
         color: const Color(0xFFF8FAFC),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: badgeColor.withOpacity(0.3), width: 1.2),
+        border: Border.all(color: badgeColor.withValues(alpha: 0.3), width: 1.2),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -352,7 +352,7 @@ class _VolunteerDashboardState extends State<VolunteerDashboard> {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
                 decoration: BoxDecoration(
-                  color: badgeColor.withOpacity(0.12),
+                  color: badgeColor.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(6),
                 ),
                 child: Text(
@@ -408,7 +408,7 @@ class _VolunteerDashboardState extends State<VolunteerDashboard> {
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(18),
         side: BorderSide(
-          color: isResponding ? const Color(0xFF0284C7) : _alertRed.withOpacity(0.5),
+          color: isResponding ? const Color(0xFF0284C7) : _alertRed.withValues(alpha: 0.5),
           width: 1.5,
         ),
       ),
