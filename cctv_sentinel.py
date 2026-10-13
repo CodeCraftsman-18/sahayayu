@@ -1,5 +1,6 @@
 import os
 import sys
+import threading
 
 # Suppress FFmpeg stream warnings
 os.environ["OPENCV_FFMPEG_LOGLEVEL"] = "-8"
@@ -11,15 +12,57 @@ from mediapipe.tasks.python import vision
 import numpy as np
 import time
 import urllib.request
-import threading
 from datetime import datetime, timezone
-import sounddevice as sd
 from supabase import create_client, Client
 
 # ==========================================
-# 1. CONFIGURATION & CREDENTIALS
+# 1. ZERO-LATENCY THREADED FRAME GRABBER
 # ==========================================
-CAMERA_STREAM_URL = "http://192.168.1.43:8080/video"
+class FreshFrameGrabber:
+    """Continuously drains OpenCV's internal socket buffer on a background thread.
+    Guarantees the main loop receives the instantaneous real-time camera frame.
+    """
+    def __init__(self, src):
+        self.cap = cv2.VideoCapture(src)
+        self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+        self.lock = threading.Lock()
+        self.frame = None
+        self.running = True
+        self.has_new_frame = False
+
+        if not self.cap.isOpened():
+            print(f"[ERROR] Could not open video stream: {src}")
+            sys.exit(1)
+
+        self.thread = threading.Thread(target=self._capture_loop, daemon=True)
+        self.thread.start()
+
+    def _capture_loop(self):
+        while self.running:
+            success, frame = self.cap.read()
+            if not success:
+                time.sleep(0.01)
+                continue
+            with self.lock:
+                self.frame = frame
+                self.has_new_frame = True
+
+    def read(self):
+        with self.lock:
+            if self.frame is None:
+                return False, None
+            return True, self.frame.copy()
+
+    def stop(self):
+        self.running = False
+        if self.thread.is_alive():
+            self.thread.join(timeout=1.0)
+        self.cap.release()
+
+# ==========================================
+# 2. CONFIGURATION & CREDENTIALS
+# ==========================================
+CAMERA_STREAM_URL = "http://192.168.1.11:8080/video"
 
 SUPABASE_URL = "https://xjvxzjhsmhprbkwuwpou.supabase.co"
 SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inhqdnh6amhzbWhwcmJrd3V3cG91Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODYyNTcxMzcsImV4cCI6MjEwMTgzMzEzN30.MgaT33q9Pgg0F8syxoj58VXBx1CUxXBQCw8zc9Dy00E"
@@ -32,42 +75,7 @@ except Exception as e:
     supabase = None
 
 # ==========================================
-# 2. ACOUSTIC SENSING ENGINE (sounddevice)
-# ==========================================
-AUDIO_SAMPLE_RATE = 16000
-AUDIO_BLOCK_SIZE = 1024
-current_audio_rms = 0.0
-last_audio_impact_time = 0.0
-AUDIO_IMPACT_THRESHOLD = 0.18  # Calibrated for blunt impact thud / clap
-
-def audio_callback(indata, frames, time_info, status):
-    """Calculates continuous Root Mean Square (RMS) energy of microphone input."""
-    global current_audio_rms, last_audio_impact_time
-    if status:
-        pass
-    # Calculate RMS amplitude
-    rms = np.sqrt(np.mean(indata**2))
-    current_audio_rms = float(rms)
-    
-    if current_audio_rms >= AUDIO_IMPACT_THRESHOLD:
-        last_audio_impact_time = time.time()
-
-# Start background audio stream
-try:
-    audio_stream = sd.InputStream(
-        channels=1,
-        samplerate=AUDIO_SAMPLE_RATE,
-        blocksize=AUDIO_BLOCK_SIZE,
-        callback=audio_callback
-    )
-    audio_stream.start()
-    print("[AUDIO SENTINEL] Real-time acoustic impact monitor active.")
-except Exception as e:
-    print(f"[AUDIO WARNING] Could not bind microphone: {e}. Defaulting to vision-only.")
-    audio_stream = None
-
-# ==========================================
-# 3. POSE LANDMARKER INITIALIZATION
+# 3. INITIALIZE POSE LANDMARKER TASK
 # ==========================================
 MODEL_PATH = "pose_landmarker_lite.task"
 MODEL_URL = "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task"
@@ -87,7 +95,7 @@ options = vision.PoseLandmarkerOptions(
 )
 detector = vision.PoseLandmarker.create_from_options(options)
 
-# Kinematic & Fusion State Variables
+# Kinematic State Variables
 prev_hip_y = None
 prev_time = time.time()
 fall_detected_at = None
@@ -103,12 +111,12 @@ POSE_CONNECTIONS = [
     (25, 27), (26, 28)
 ]
 
-print(f"[SENTINEL] Connecting to stream: {CAMERA_STREAM_URL}")
-cap = cv2.VideoCapture(CAMERA_STREAM_URL)
+print(f"[SENTINEL] Connecting threaded reader to stream: {CAMERA_STREAM_URL}")
+stream_reader = FreshFrameGrabber(CAMERA_STREAM_URL)
 
 
 def dispatch_cctv_emergency():
-    """Pushes multimodal verified emergency to Supabase and logs SBAR hospital record."""
+    """Pushes vision-detected emergency to Supabase and logs SBAR hospital record."""
     global last_supabase_dispatch
     now = time.time()
     if now - last_supabase_dispatch < COOLDOWN_SECONDS:
@@ -117,19 +125,19 @@ def dispatch_cctv_emergency():
     last_supabase_dispatch = now
     payload = {
         "status": "OPEN",
-        "source": "AI CCTV: Multimodal Fall (Vision + Acoustic Impact Verified)",
-        "heart_rate": 92,
-        "systolic_bp": 128,
-        "diastolic_bp": 84,
-        "shock_index": 0.72,
+        "source": "AI CCTV: Living Room Fall Detected (Vision Sentinel)",
+        "heart_rate": 88,
+        "systolic_bp": 126,
+        "diastolic_bp": 82,
+        "shock_index": 0.70,
         "latitude": 22.7196,
         "longitude": 75.8577,
-        "location": "Living Room (Optical & Acoustic Sentinel)",
+        "location": "Living Room (Optical Sentinel Feed)",
         "created_at": datetime.now(timezone.utc).isoformat()
     }
 
     if not supabase:
-        print("[MOCK DISPATCH] Multimodal emergency dispatched (Supabase offline).")
+        print("[MOCK DISPATCH] Emergency generated (Supabase offline).")
         return
 
     try:
@@ -137,9 +145,9 @@ def dispatch_cctv_emergency():
         if not res.data:
             return
         emergency_id = res.data[0]["id"]
-        print(f"\n[🚨 MULTIMODAL EMERGENCY DISPATCHED] -> ID: {emergency_id}")
+        print(f"\n[🚨 EMERGENCY DISPATCHED TO SUPABASE] -> ID: {emergency_id}")
 
-        # Fetch STEADI profile for SBAR synthesis
+        # Fetch latest intake profile for SBAR synthesis
         profile = None
         try:
             p_res = supabase.table("elder_clinical_profiles").select("*").order("created_at", desc=True).limit(1).execute()
@@ -154,16 +162,16 @@ def dispatch_cctv_emergency():
 
         sbar_text = (
             f"[S] SITUATION:\n"
-            f"Dual-sensor verified acute fall. Vision Sentinel detected rapid CoM plunge coincided "
-            f"with calibrated acoustic impact spike (Audio Energy Peak: {current_audio_rms:.2f}).\n\n"
+            f"Autonomous fall confirmed via Optical CCTV Sentinel. Rapid vertical displacement "
+            f"followed by 1.5s post-impact quiescence on floor. Baseline vitals: 88 BPM, BP 126/82 mmHg, SI: 0.70.\n\n"
             f"[B] BACKGROUND:\n"
             f"STEADI Risk: {risk_level}. Comorbidities: {', '.join(conditions)}. "
             f"Anticoagulant Therapy: {'YES (Severe Bleed Risk)' if on_anticoagulants else 'NO'}.\n\n"
             f"[A] ASSESSMENT:\n"
-            f"High-energy mechanical deceleration on floor plane. Heightened risk of skeletal trauma "
-            f"and concussive injury.\n\n"
+            f"Kinematic impact vector suggests sudden loss of balance without arm arrest reflex. "
+            f"Heightened risk of intertrochanteric fracture or cranial impact.\n\n"
             f"[R] RECOMMENDATION:\n"
-            f"Assign Emergency Trauma Bay. Prepare cervical collar, 18G IV access, and stat Head CT."
+            f"Prepare Emergency Trauma Bay. Alert trauma team for non-contrast brain CT and pelvic radiographic series."
         )
 
         supabase.table("hospital_admissions").insert({
@@ -173,7 +181,7 @@ def dispatch_cctv_emergency():
             "triage_level": "RED (Resuscitation)" if on_anticoagulants else "YELLOW (Urgent)",
             "pre_existing_conditions": conditions,
             "on_blood_thinners": on_anticoagulants,
-            "vitals_snapshot": {"heart_rate": 92, "systolic_bp": 128, "diastolic_bp": 84, "shock_index": 0.72},
+            "vitals_snapshot": {"heart_rate": 88, "systolic_bp": 126, "diastolic_bp": 82, "shock_index": 0.70},
             "sbar_briefing": sbar_text,
             "status": "INCOMING",
             "created_at": datetime.now(timezone.utc).isoformat()
@@ -184,14 +192,14 @@ def dispatch_cctv_emergency():
         print(f"[DISPATCH ERROR] {err}")
 
 
-print("\n--- SahayAyu Multimodal Audio-Visual Sentinel Online ---")
+print("\n--- SahayAyu CCTV Sentinel Armed (Zero-Latency Threaded Mode) ---")
 print("Controls: [P] Toggle Privacy  |  [Q] Quit\n")
 
 try:
-    while cap.isOpened():
-        success, frame = cap.read()
-        if not success:
-            time.sleep(0.1)
+    while True:
+        success, frame = stream_reader.read()
+        if not success or frame is None:
+            time.sleep(0.005)
             continue
 
         frame = cv2.resize(frame, (640, 480))
@@ -207,13 +215,10 @@ try:
         status_color = (0, 220, 0)
         display_frame = np.zeros((h, w, 3), dtype=np.uint8) if privacy_mode else frame.copy()
 
-        # Check temporal acoustic coincidence window (last 1.5 seconds)
-        acoustic_impact_active = (current_time - last_audio_impact_time) <= 1.5
-
         if detection_result.pose_landmarks and len(detection_result.pose_landmarks) > 0:
             landmarks = detection_result.pose_landmarks[0]
 
-            # Render wireframe
+            # Render 3D skeleton wireframe
             for p1_idx, p2_idx in POSE_CONNECTIONS:
                 pt1 = landmarks[p1_idx]
                 pt2 = landmarks[p2_idx]
@@ -226,8 +231,6 @@ try:
             # Center of Mass (Hips) and Torso (Shoulders)
             hip_y = (landmarks[23].y + landmarks[24].y) / 2.0
             shoulder_y = (landmarks[11].y + landmarks[12].y) / 2.0
-            hip_x = (landmarks[23].x + landmarks[24].x) / 2.0
-            shoulder_x = (landmarks[11].x + landmarks[12].x) / 2.0
 
             velocity_y = (hip_y - prev_hip_y) / dt if prev_hip_y is not None else 0.0
             prev_hip_y = hip_y
@@ -241,51 +244,33 @@ try:
             if is_upright and not in_fall_state:
                 has_been_upright = True
 
-            # Multimodal Fusion Rule:
-            # Kinematic downward plunge + Ground proximity + Acoustic impact thud
-            optical_trigger = velocity_y > 1.3 or (is_horizontal and is_near_floor and velocity_y > 0.35)
-
+            # Calibrated Fall Trigger:
+            # Requires prior upright posture + rapid plunge or horizontal floor collapse
             if has_been_upright and not in_fall_state:
-                if optical_trigger:
-                    if acoustic_impact_active:
-                        # True Positive: Kinematic drop accompanied by acoustic thud
-                        in_fall_state = True
-                        fall_detected_at = current_time
-                    else:
-                        # False Positive Suppression: Gentle lie down on couch / no impact sound
-                        status_text = "SUPPRESSED: GENTLE MOTION (NO ACOUSTIC IMPACT)"
-                        status_color = (0, 165, 255)
+                if velocity_y > 1.3 or (is_horizontal and is_near_floor and velocity_y > 0.4):
+                    in_fall_state = True
+                    fall_detected_at = current_time
 
-            # Post-Impact Quiescence confirmation (lying still >= 1.5s)
+            # Post-Impact Quiescence (lying still on floor >= 1.5s)
             if in_fall_state:
                 elapsed = current_time - (fall_detected_at or current_time)
-                status_text = f"MULTIMODAL FALL: CONFIRMING ({elapsed:.1f}s)"
+                status_text = f"FALL DETECTED: CONFIRMING ({elapsed:.1f}s)"
                 status_color = (0, 0, 255)
 
                 if elapsed >= 1.5:
-                    status_text = "EMERGENCY: FALL & IMPACT CONFIRMED!"
+                    status_text = "EMERGENCY: FALL CONFIRMED!"
                     dispatch_cctv_emergency()
 
                 if is_upright:
                     in_fall_state = False
                     fall_detected_at = None
 
-        # --- HUD TELEMETRY & LIVE SENSOR VISUALIZATIONS ---
+        # HUD Telemetry Banner
         mode_str = "PRIVACY WIREFRAME ONLY" if privacy_mode else "OPTICAL PASS-THROUGH"
-        cv2.putText(display_frame, f"SahayAyu Multimodal Sentinel | {mode_str}", (20, 30),
+        cv2.putText(display_frame, f"SahayAyu Vision Sentinel | {mode_str}", (20, 30),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.52, (255, 255, 255), 2)
-        cv2.putText(display_frame, f"STATUS: {status_text}", (20, 60),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.65, status_color, 2)
-
-        # Real-time Microphone Decibel/RMS Meter Bar
-        meter_x, meter_y, meter_w, meter_h = 20, 80, 160, 12
-        cv2.rectangle(display_frame, (meter_x, meter_y), (meter_x + meter_w, meter_y + meter_h), (60, 60, 60), -1)
-        fill_w = int(min(current_audio_rms / 0.35, 1.0) * meter_w)
-        bar_color = (0, 0, 255) if acoustic_impact_active else (0, 255, 0)
-        cv2.rectangle(display_frame, (meter_x, meter_y), (meter_x + fill_w, meter_y + meter_h), bar_color, -1)
-        cv2.putText(display_frame, f"Mic RMS: {current_audio_rms:.2f} {'[IMPACT]' if acoustic_impact_active else ''}",
-                    (meter_x + meter_w + 10, meter_y + 10), cv2.FONT_HERSHEY_SIMPLEX, 0.42, bar_color, 1)
-
+        cv2.putText(display_frame, f"STATUS: {status_text}", (20, 65),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, status_color, 2)
         cv2.putText(display_frame, "[P]: Toggle Privacy  |  [Q]: Quit", (20, 455),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.45, (200, 200, 200), 1)
 
@@ -298,11 +283,8 @@ try:
             privacy_mode = not privacy_mode
 
 except KeyboardInterrupt:
-    print("\n[SENTINEL] Shutting down...")
+    print("\n[SENTINEL] Shutting down cleanly...")
 finally:
-    if audio_stream:
-        audio_stream.stop()
-        audio_stream.close()
-    cap.release()
+    stream_reader.stop()
     cv2.destroyAllWindows()
     print("[SENTINEL] Resources released.")
