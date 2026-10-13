@@ -1,0 +1,113 @@
+name: SahayAyu Production CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  # =======================================================
+  # Stage 1: Quality Checks (Python Sentinel & Flutter)
+  # =======================================================
+  quality-checks:
+    name: Code Hygiene & Static Analysis
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      # Python Linting
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Python Linters
+        run: |
+          python -m pip install --upgrade pip
+          pip install flake8
+
+      - name: Lint Python Sentinel
+        run: |
+          # Stop the build if there are Python syntax errors or undefined names
+          flake8 cctv_sentinel.py sentinel_daemon.py --count --select=E9,F63,F7,F82 --show-source --statistics
+
+      # Flutter Analysis
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: Install Flutter Packages
+        run: flutter pub get
+
+      - name: Analyze Flutter Code
+        run: flutter analyze
+
+  # =======================================================
+  # Stage 2: Automated Release Build & Artifact Packaging
+  # =======================================================
+  build-and-release:
+    name: Build & Publish Release APK
+    needs: quality-checks
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: Install Dependencies
+        run: flutter pub get
+
+      - name: Build Production Release APK
+        run: |
+          flutter build apk --release \
+            --dart-define=SUPABASE_URL=${{ secrets.SUPABASE_URL }} \
+            --dart-define=SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
+
+      - name: Rename APK Artifact
+        run: |
+          mv build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/SahayAyu-v1.0.${{ github.run_number }}.apk
+
+      - name: Upload Build Artifact to GitHub
+        uses: actions/upload-artifact@v4
+        with:
+          name: SahayAyu-Release-APK
+          path: build/app/outputs/flutter-apk/SahayAyu-v1.0.${{ github.run_number }}.apk
+
+      - name: Publish Automated GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: build/app/outputs/flutter-apk/SahayAyu-v1.0.${{ github.run_number }}.apk
+          tag_name: v1.0.${{ github.run_number }}
+          name: "SahayAyu Production Release v1.0.${{ github.run_number }}"
+          body: |
+            ### Automated Production Build
+            * **Triggered by commit:** `${{ github.sha }}`
+            * **Edge AI Module:** Threaded Python Sentinel with SBAR Clinical Handover
+            * **Backend:** Supabase / PostGIS Spatial RPC Engine
+            * **Build Number:** `${{ github.run_number }}`
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
