@@ -1,37 +1,76 @@
 import os
 import sys
 import threading
+from pathlib import Path
+import time
+import urllib.request
+from datetime import datetime, timezone
 
 # Suppress FFmpeg stream warnings
 os.environ["OPENCV_FFMPEG_LOGLEVEL"] = "-8"
 
+# ==========================================
+# 1. BULLETPROOF .ENV LOADER (Strips Windows UTF-16 Null-Bytes & BOM)
+# ==========================================
+env_file = Path(__file__).resolve().parent / ".env"
+
+if not env_file.exists():
+    print(f"\n[CRITICAL ERROR] .env file not found at: {env_file}")
+    sys.exit(1)
+
+# Read raw bytes and strip null-bytes and BOMs caused by Windows PowerShell
+raw_bytes = env_file.read_bytes()
+sanitized_text = raw_bytes.decode("latin-1", errors="ignore").replace("\x00", "")
+
+loaded_keys = []
+for line in sanitized_text.splitlines():
+    line = line.strip()
+    if line and not line.startswith("#") and "=" in line:
+        k, v = line.split("=", 1)
+        # Strip potential BOM characters from key names
+        clean_key = k.strip().lstrip("\ufeff\xef\xbb\xbf\xff\xfe")
+        clean_val = v.strip().strip("'\"")
+        os.environ[clean_key] = clean_val
+        loaded_keys.append(clean_key)
+
+# Extract and validate required configuration
+CAMERA_STREAM_URL = os.getenv("CAMERA_STREAM_URL")
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+
+if not all([CAMERA_STREAM_URL, SUPABASE_URL, SUPABASE_KEY]):
+    print(f"\n[CRITICAL ERROR] Missing required environment variables from {env_file}.")
+    print(f"Parsed keys in file: {loaded_keys}")
+    print(f"CAMERA_STREAM_URL:   {repr(CAMERA_STREAM_URL)}")
+    print(f"SUPABASE_URL:        {repr(SUPABASE_URL)}")
+    print(f"SUPABASE_KEY:        {'[SET]' if SUPABASE_KEY else 'None'}\n")
+    sys.exit(1)
+
+print(f"[CONFIG] Successfully loaded environment variables: {', '.join(loaded_keys)}")
+
+# ==========================================
+# 2. DEPENDENCY IMPORTS & BACKEND LINK
+# ==========================================
 import cv2
 import mediapipe as mp
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
 import numpy as np
-import time
-import urllib.request
-from datetime import datetime, timezone
 from supabase import create_client, Client
-from dotenv import load_dotenv
 
-load_dotenv()
-CAMERA_STREAM_URL = os.getenv("http://192.168.1.11:8080/video")
-SUPABASE_URL = os.getenv("https://xjvxzjhsmhprbkwuwpou.supabase.co")
-SUPABASE_KEY = os.getenv("eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inhqdnh6amhzbWhwcmJrd3V3cG91Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODYyNTcxMzcsImV4cCI6MjEwMTgzMzEzN30.MgaT33q9Pgg0F8syxoj58VXBx1CUxXBQCw8zc9Dy00E")
-
-if not all([CAMERA_STREAM_URL, SUPABASE_URL, SUPABASE_KEY]):
-    print("\n[CRITICAL ERROR] Missing required environment variables.")
-    print("Ensure you have created a valid .env file based on .env.example.\n")
-    sys.exit(1)
+try:
+    supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+    print("[SUPABASE] Connected successfully to Cloud Backend.")
+except Exception as e:
+    print(f"[SUPABASE ERROR] Verification failed: {e}")
+    supabase = None
 
 # ==========================================
-# 1. ZERO-LATENCY THREADED FRAME GRABBER
+# 3. ZERO-LATENCY THREADED FRAME GRABBER
 # ==========================================
 class FreshFrameGrabber:
     """Continuously drains OpenCV's internal socket buffer on a background thread.
-    Guarantees the main loop receives the instantaneous real-time camera frame.
+    Guarantees the main AI loop receives the instantaneous real-time camera frame.
     """
     def __init__(self, src):
         self.cap = cv2.VideoCapture(src)
@@ -39,7 +78,6 @@ class FreshFrameGrabber:
         self.lock = threading.Lock()
         self.frame = None
         self.running = True
-        self.has_new_frame = False
 
         if not self.cap.isOpened():
             print(f"[ERROR] Could not open video stream: {src}")
@@ -56,7 +94,6 @@ class FreshFrameGrabber:
                 continue
             with self.lock:
                 self.frame = frame
-                self.has_new_frame = True
 
     def read(self):
         with self.lock:
@@ -71,22 +108,7 @@ class FreshFrameGrabber:
         self.cap.release()
 
 # ==========================================
-# 2. CONFIGURATION & CREDENTIALS
-# ==========================================
-CAMERA_STREAM_URL = "http://192.168.1.11:8080/video"
-
-SUPABASE_URL = "https://xjvxzjhsmhprbkwuwpou.supabase.co"
-SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inhqdnh6amhzbWhwcmJrd3V3cG91Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODYyNTcxMzcsImV4cCI6MjEwMTgzMzEzN30.MgaT33q9Pgg0F8syxoj58VXBx1CUxXBQCw8zc9Dy00E"
-
-try:
-    supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-    print("[SUPABASE] Connected successfully to Cloud Backend.")
-except Exception as e:
-    print(f"[SUPABASE ERROR] Verification failed: {e}")
-    supabase = None
-
-# ==========================================
-# 3. INITIALIZE POSE LANDMARKER TASK
+# 4. INITIALIZE POSE LANDMARKER TASK
 # ==========================================
 MODEL_PATH = "pose_landmarker_lite.task"
 MODEL_URL = "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task"
@@ -125,7 +147,9 @@ POSE_CONNECTIONS = [
 print(f"[SENTINEL] Connecting threaded reader to stream: {CAMERA_STREAM_URL}")
 stream_reader = FreshFrameGrabber(CAMERA_STREAM_URL)
 
-
+# ==========================================
+# 5. AUTONOMOUS CLINICAL SBAR DISPATCH
+# ==========================================
 def dispatch_cctv_emergency():
     """Pushes vision-detected emergency to Supabase and logs SBAR hospital record."""
     global last_supabase_dispatch
@@ -158,7 +182,7 @@ def dispatch_cctv_emergency():
         emergency_id = res.data[0]["id"]
         print(f"\n[🚨 EMERGENCY DISPATCHED TO SUPABASE] -> ID: {emergency_id}")
 
-        # Fetch latest intake profile for SBAR synthesis
+        # Fetch latest STEADI clinical profile for SBAR synthesis
         profile = None
         try:
             p_res = supabase.table("elder_clinical_profiles").select("*").order("created_at", desc=True).limit(1).execute()
@@ -202,9 +226,11 @@ def dispatch_cctv_emergency():
     except Exception as err:
         print(f"[DISPATCH ERROR] {err}")
 
-
+# ==========================================
+# 6. SENTINEL INFERENCE & MONITORING LOOP
+# ==========================================
 print("\n--- SahayAyu CCTV Sentinel Armed (Zero-Latency Threaded Mode) ---")
-print("Controls: [P] Toggle Privacy  |  [Q] Quit\n")
+print("Controls: [P] Toggle Privacy Wireframe  |  [Q] Quit\n")
 
 try:
     while True:
