@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'login_screen.dart';
+import 'cctv_surveillance_screen.dart';
 
 class GuardianDashboard extends StatefulWidget {
   final String? targetElderId;
@@ -13,7 +14,8 @@ class GuardianDashboard extends StatefulWidget {
   State<GuardianDashboard> createState() => _GuardianDashboardState();
 }
 
-class _GuardianDashboardState extends State<GuardianDashboard> with WidgetsBindingObserver {
+class _GuardianDashboardState extends State<GuardianDashboard>
+    with WidgetsBindingObserver {
   static const Color _primaryGreen = Color(0xFF0F765E);
   static const Color _sosRed = Color(0xFFD32F2F);
   static const Color _bgColor = Color(0xFFF7F9F8);
@@ -45,8 +47,7 @@ class _GuardianDashboardState extends State<GuardianDashboard> with WidgetsBindi
 
       _locationStream = Supabase.instance.client
           .from('live_locations')
-          .stream(primaryKey: ['elder_id'])
-          .eq('elder_id', targetId);
+          .stream(primaryKey: ['elder_id']).eq('elder_id', targetId);
     } else {
       _emergenciesStream = Supabase.instance.client
           .from('emergencies')
@@ -91,8 +92,7 @@ class _GuardianDashboardState extends State<GuardianDashboard> with WidgetsBindi
       await query.limit(1).maybeSingle();
 
       if (mounted) {
-        setState(() {
-        });
+        setState(() {});
       }
     } catch (e) {
       debugPrint('[Reconciliation] Error verifying active emergencies: $e');
@@ -111,7 +111,8 @@ class _GuardianDashboardState extends State<GuardianDashboard> with WidgetsBindi
   // --- External Actions (Maps & Phone Dialer) ---
 
   Future<void> _openGoogleMaps(double lat, double lng) async {
-    final uri = Uri.parse('https://www.google.com/maps/search/?api=1&query=$lat,$lng');
+    final uri =
+        Uri.parse('https://www.google.com/maps/search/?api=1&query=$lat,$lng');
     try {
       if (await canLaunchUrl(uri)) {
         await launchUrl(uri, mode: LaunchMode.externalApplication);
@@ -162,12 +163,13 @@ class _GuardianDashboardState extends State<GuardianDashboard> with WidgetsBindi
       try {
         await Supabase.instance.client
             .from('emergencies')
-            .update({'status': 'RESOLVED'})
-            .eq('id', id);
+            .update({'status': 'RESOLVED'}).eq('id', id);
       } catch (e) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Update failed: $e'), backgroundColor: Colors.red),
+            SnackBar(
+                content: Text('Update failed: $e'),
+                backgroundColor: Colors.red),
           );
         }
         return;
@@ -222,7 +224,8 @@ class _GuardianDashboardState extends State<GuardianDashboard> with WidgetsBindi
                     children: [
                       const Text(
                         'Send Family Sandesh',
-                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                        style: TextStyle(
+                            fontSize: 18, fontWeight: FontWeight.bold),
                       ),
                       IconButton(
                         icon: const Icon(Icons.close),
@@ -236,14 +239,14 @@ class _GuardianDashboardState extends State<GuardianDashboard> with WidgetsBindi
                     style: TextStyle(fontSize: 13, color: Colors.grey[600]),
                   ),
                   const SizedBox(height: 14),
-
                   Wrap(
                     spacing: 8,
                     runSpacing: 6,
                     children: presets.map((preset) {
                       final isSelected = selectedPreset == preset;
                       return ChoiceChip(
-                        label: Text(preset, style: const TextStyle(fontSize: 12)),
+                        label:
+                            Text(preset, style: const TextStyle(fontSize: 12)),
                         selected: isSelected,
                         selectedColor: _primaryGreen.withValues(alpha: 0.18),
                         onSelected: (val) {
@@ -256,7 +259,6 @@ class _GuardianDashboardState extends State<GuardianDashboard> with WidgetsBindi
                     }).toList(),
                   ),
                   const SizedBox(height: 12),
-
                   TextField(
                     controller: textController,
                     maxLines: 2,
@@ -271,7 +273,6 @@ class _GuardianDashboardState extends State<GuardianDashboard> with WidgetsBindi
                     ),
                   ),
                   const SizedBox(height: 16),
-
                   SizedBox(
                     width: double.infinity,
                     height: 48,
@@ -282,7 +283,8 @@ class _GuardianDashboardState extends State<GuardianDashboard> with WidgetsBindi
 
                         Navigator.pop(ctx);
                         try {
-                          final user = Supabase.instance.client.auth.currentUser;
+                          final user =
+                              Supabase.instance.client.auth.currentUser;
                           final targetId = widget.targetElderId;
 
                           final payload = <String, dynamic>{
@@ -297,12 +299,15 @@ class _GuardianDashboardState extends State<GuardianDashboard> with WidgetsBindi
                             payload['elder_id'] = targetId;
                           }
 
-                          await Supabase.instance.client.from('family_messages').insert(payload);
+                          await Supabase.instance.client
+                              .from('family_messages')
+                              .insert(payload);
 
                           if (mounted) {
                             ScaffoldMessenger.of(context).showSnackBar(
                               const SnackBar(
-                                content: Text('Sandesh sent to Elder screen! ❤️'),
+                                content:
+                                    Text('Sandesh sent to Elder screen! ❤️'),
                                 backgroundColor: _primaryGreen,
                               ),
                             );
@@ -310,7 +315,9 @@ class _GuardianDashboardState extends State<GuardianDashboard> with WidgetsBindi
                         } catch (e) {
                           if (mounted) {
                             ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('Send failed: $e'), backgroundColor: Colors.red),
+                              SnackBar(
+                                  content: Text('Send failed: $e'),
+                                  backgroundColor: Colors.red),
                             );
                           }
                         }
@@ -323,7 +330,8 @@ class _GuardianDashboardState extends State<GuardianDashboard> with WidgetsBindi
                       style: ElevatedButton.styleFrom(
                         backgroundColor: _primaryGreen,
                         foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12)),
                       ),
                     ),
                   ),
@@ -341,8 +349,10 @@ class _GuardianDashboardState extends State<GuardianDashboard> with WidgetsBindi
       context: context,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text('Logout', style: TextStyle(fontWeight: FontWeight.bold)),
-        content: const Text('Are you sure you want to logout from Guardian mode?'),
+        title:
+            const Text('Logout', style: TextStyle(fontWeight: FontWeight.bold)),
+        content:
+            const Text('Are you sure you want to logout from Guardian mode?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
@@ -423,7 +433,8 @@ class _GuardianDashboardState extends State<GuardianDashboard> with WidgetsBindi
                   color: _sosRed,
                   shape: BoxShape.circle,
                 ),
-                child: const Icon(Icons.warning_amber_rounded, color: Colors.white, size: 24),
+                child: const Icon(Icons.warning_amber_rounded,
+                    color: Colors.white, size: 24),
               ),
               const SizedBox(width: 12),
               const Expanded(
@@ -461,7 +472,8 @@ class _GuardianDashboardState extends State<GuardianDashboard> with WidgetsBindi
                 Expanded(
                   child: Text(
                     'Reason: $source',
-                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                    style: const TextStyle(
+                        fontWeight: FontWeight.bold, fontSize: 13),
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
@@ -487,7 +499,8 @@ class _GuardianDashboardState extends State<GuardianDashboard> with WidgetsBindi
                   style: ElevatedButton.styleFrom(
                     backgroundColor: _primaryGreen,
                     foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10)),
                   ),
                 ),
               ),
@@ -500,14 +513,16 @@ class _GuardianDashboardState extends State<GuardianDashboard> with WidgetsBindi
                   style: ElevatedButton.styleFrom(
                     backgroundColor: _sosRed,
                     foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10)),
                   ),
                 ),
               ),
               const SizedBox(width: 8),
               IconButton(
                 onPressed: () => _resolveEmergency(id),
-                icon: const Icon(Icons.check_circle_outline, color: _primaryGreen, size: 28),
+                icon: const Icon(Icons.check_circle_outline,
+                    color: _primaryGreen, size: 28),
                 tooltip: 'Mark Resolved',
               ),
             ],
@@ -531,7 +546,8 @@ class _GuardianDashboardState extends State<GuardianDashboard> with WidgetsBindi
               border: Border.all(color: Colors.grey.shade200),
             ),
             child: const Center(
-              child: CircularProgressIndicator(color: _primaryGreen, strokeWidth: 2),
+              child: CircularProgressIndicator(
+                  color: _primaryGreen, strokeWidth: 2),
             ),
           );
         }
@@ -549,14 +565,17 @@ class _GuardianDashboardState extends State<GuardianDashboard> with WidgetsBindi
           return _buildLocationPlaceholder(
             icon: Icons.location_off_outlined,
             title: 'No Active Senior Tracking',
-            subtitle: 'Enable "Live Location Sharing" on the Elder app to view.',
+            subtitle:
+                'Enable "Live Location Sharing" on the Elder app to view.',
           );
         }
 
         final activeLocation = locations.first;
         final bool isSharing = activeLocation['is_sharing'] ?? false;
-        final double lat = (activeLocation['latitude'] as num?)?.toDouble() ?? 0.0;
-        final double lng = (activeLocation['longitude'] as num?)?.toDouble() ?? 0.0;
+        final double lat =
+            (activeLocation['latitude'] as num?)?.toDouble() ?? 0.0;
+        final double lng =
+            (activeLocation['longitude'] as num?)?.toDouble() ?? 0.0;
 
         if (!isSharing) {
           return _buildLocationPlaceholder(
@@ -594,7 +613,8 @@ class _GuardianDashboardState extends State<GuardianDashboard> with WidgetsBindi
                           color: const Color(0xFFE8F5E9),
                           borderRadius: BorderRadius.circular(10),
                         ),
-                        child: const Icon(Icons.my_location, color: _primaryGreen, size: 22),
+                        child: const Icon(Icons.my_location,
+                            color: _primaryGreen, size: 22),
                       ),
                       const SizedBox(width: 12),
                       const Column(
@@ -602,25 +622,33 @@ class _GuardianDashboardState extends State<GuardianDashboard> with WidgetsBindi
                         children: [
                           Text(
                             'Elder GPS Live',
-                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                            style: TextStyle(
+                                fontWeight: FontWeight.bold, fontSize: 16),
                           ),
                           Text(
                             'Real-time streaming active',
-                            style: TextStyle(fontSize: 12, color: _primaryGreen, fontWeight: FontWeight.w600),
+                            style: TextStyle(
+                                fontSize: 12,
+                                color: _primaryGreen,
+                                fontWeight: FontWeight.w600),
                           ),
                         ],
                       ),
                     ],
                   ),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                     decoration: BoxDecoration(
                       color: const Color(0xFFE8F5E9),
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: const Text(
                       'ONLINE',
-                      style: TextStyle(color: _primaryGreen, fontSize: 11, fontWeight: FontWeight.bold),
+                      style: TextStyle(
+                          color: _primaryGreen,
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold),
                     ),
                   ),
                 ],
@@ -640,7 +668,8 @@ class _GuardianDashboardState extends State<GuardianDashboard> with WidgetsBindi
                   style: ElevatedButton.styleFrom(
                     backgroundColor: _primaryGreen,
                     foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12)),
                     padding: const EdgeInsets.symmetric(vertical: 12),
                   ),
                 ),
@@ -673,9 +702,12 @@ class _GuardianDashboardState extends State<GuardianDashboard> with WidgetsBindi
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                Text(title,
+                    style: const TextStyle(
+                        fontWeight: FontWeight.bold, fontSize: 14)),
                 const SizedBox(height: 2),
-                Text(subtitle, style: TextStyle(fontSize: 12, color: Colors.grey[600])),
+                Text(subtitle,
+                    style: TextStyle(fontSize: 12, color: Colors.grey[600])),
               ],
             ),
           ),
@@ -708,11 +740,15 @@ class _GuardianDashboardState extends State<GuardianDashboard> with WidgetsBindi
             ),
             child: Column(
               children: [
-                const Icon(Icons.signal_wifi_connected_no_internet_4, size: 36, color: _sosRed),
+                const Icon(Icons.signal_wifi_connected_no_internet_4,
+                    size: 36, color: _sosRed),
                 const SizedBox(height: 8),
                 const Text(
                   'Telemetry Stream Disrupted',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: _sosRed),
+                  style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                      color: _sosRed),
                 ),
                 const SizedBox(height: 4),
                 Text(
@@ -737,7 +773,8 @@ class _GuardianDashboardState extends State<GuardianDashboard> with WidgetsBindi
             ),
             child: Column(
               children: [
-                const Icon(Icons.check_circle_outline, color: _primaryGreen, size: 40),
+                const Icon(Icons.check_circle_outline,
+                    color: _primaryGreen, size: 40),
                 const SizedBox(height: 8),
                 const Text(
                   'All Quiet & Safe',
@@ -772,7 +809,9 @@ class _GuardianDashboardState extends State<GuardianDashboard> with WidgetsBindi
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(14),
                 border: Border.all(
-                  color: isOpen ? _sosRed.withValues(alpha: 0.3) : Colors.grey.shade200,
+                  color: isOpen
+                      ? _sosRed.withValues(alpha: 0.3)
+                      : Colors.grey.shade200,
                   width: isOpen ? 1.5 : 1,
                 ),
               ),
@@ -781,7 +820,9 @@ class _GuardianDashboardState extends State<GuardianDashboard> with WidgetsBindi
                   Container(
                     padding: const EdgeInsets.all(10),
                     decoration: BoxDecoration(
-                      color: isOpen ? const Color(0xFFFFEBEE) : const Color(0xFFE8F5E9),
+                      color: isOpen
+                          ? const Color(0xFFFFEBEE)
+                          : const Color(0xFFE8F5E9),
                       shape: BoxShape.circle,
                     ),
                     child: Icon(
@@ -806,7 +847,8 @@ class _GuardianDashboardState extends State<GuardianDashboard> with WidgetsBindi
                         const SizedBox(height: 3),
                         Text(
                           'Pulse: $heartRate BPM · $location',
-                          style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                          style:
+                              TextStyle(fontSize: 12, color: Colors.grey[600]),
                         ),
                       ],
                     ),
@@ -816,13 +858,15 @@ class _GuardianDashboardState extends State<GuardianDashboard> with WidgetsBindi
                       onPressed: () => _resolveEmergency(id),
                       style: TextButton.styleFrom(
                         foregroundColor: _primaryGreen,
-                        textStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                        textStyle: const TextStyle(
+                            fontWeight: FontWeight.bold, fontSize: 13),
                       ),
                       child: const Text('Resolve'),
                     )
                   else
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 4),
                       decoration: BoxDecoration(
                         color: Colors.grey.shade100,
                         borderRadius: BorderRadius.circular(8),
@@ -841,84 +885,175 @@ class _GuardianDashboardState extends State<GuardianDashboard> with WidgetsBindi
     );
   }
 
-  // --- Main Build ---
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: _bgColor,
-      appBar: AppBar(
-        backgroundColor: Colors.white,
-        elevation: 1,
-        title: const Text(
-          'SahayAyu Guardian',
-          style: TextStyle(
-            color: _primaryGreen,
-            fontWeight: FontWeight.bold,
-            fontSize: 20,
-          ),
-        ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.logout, color: Colors.black87),
-            onPressed: _showLogoutDialog,
-          ),
-        ],
+  Widget _buildCctvSentinelCard() {
+    return Card(
+      elevation: 1,
+      color: Colors.white,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(color: Colors.grey.shade200),
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _showSendSandeshDialog,
-        backgroundColor: _primaryGreen,
-        icon: const Icon(Icons.favorite_rounded, color: Colors.white),
-        label: const Text(
-          'Send Sandesh',
-          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-        ),
-      ),
-      body: SafeArea(
-        child: RefreshIndicator(
-          onRefresh: () async {
-            _initializeStreams();
-            await _reconcileOpenEmergencies();
-            setState(() {});
-          },
-          child: SingleChildScrollView(
-            physics: const AlwaysScrollableScrollPhysics(),
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                StreamBuilder<List<Map<String, dynamic>>>(
-                  stream: _emergenciesStream,
-                  builder: (context, snapshot) {
-                    if (snapshot.hasData && snapshot.data!.isNotEmpty) {
-                      final activeAlert = snapshot.data!.cast<Map<String, dynamic>?>().firstWhere(
-                        (item) => (item?['status'] ?? '').toString().toUpperCase() == 'OPEN',
-                        orElse: () => null,
-                      );
-                      if (activeAlert != null) {
-                        return _buildActiveEmergencyBanner(activeAlert);
-                      }
-                    }
-                    return const SizedBox.shrink();
-                  },
-                ),
-
-                _buildSectionHeader('Live Location Tracking', Icons.location_on_outlined),
-                const SizedBox(height: 8),
-                _buildLiveLocationCard(),
-
-                const SizedBox(height: 24),
-
-                _buildSectionHeader('Emergency & Wellness Feed', Icons.shield_outlined),
-                const SizedBox(height: 8),
-                _buildEmergencyFeedStream(),
-
-                const SizedBox(height: 60),
-              ],
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => const CctvSurveillanceScreen(),
             ),
+          );
+        },
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: _primaryGreen.withOpacity(0.12),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.videocam_rounded,
+                    color: _primaryGreen, size: 26),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Text(
+                          'Optical CCTV Sentinel',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.black87,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: Colors.green.shade50,
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.parseBorderSide(BorderSide(
+                                color: Colors.green.shade300, width: 0.8)),
+                          ),
+                          child: Text(
+                            'ARMED',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.green.shade800,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Tap to view real-time feed & room coverage',
+                      style:
+                          TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(Icons.arrow_forward_ios_rounded,
+                  size: 16, color: Colors.grey.shade400),
+            ],
           ),
         ),
       ),
     );
   }
+  // --- Main Build ---
+
+  @override
+Widget build(BuildContext context) {
+  return Scaffold(
+    backgroundColor: _bgColor,
+    appBar: AppBar(
+      backgroundColor: Colors.white,
+      elevation: 1,
+      title: const Text(
+        'SahayAyu Guardian',
+        style: TextStyle(
+          color: _primaryGreen,
+          fontWeight: FontWeight.bold,
+          fontSize: 20,
+        ),
+      ),
+      actions: [
+        IconButton(
+          icon: const Icon(Icons.logout, color: Colors.black87),
+          onPressed: _showLogoutDialog,
+        ),
+      ],
+    ),
+    floatingActionButton: FloatingActionButton.extended(
+      onPressed: _showSendSandeshDialog,
+      backgroundColor: _primaryGreen,
+      icon: const Icon(Icons.favorite_rounded, color: Colors.white),
+      label: const Text(
+        'Send Sandesh',
+        style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+      ),
+    ),
+    body: SafeArea(
+      child: RefreshIndicator(
+        onRefresh: () async {
+          _initializeStreams();
+          await _reconcileOpenEmergencies();
+          setState(() {});
+        },
+        child: SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              StreamBuilder<List<Map<String, dynamic>>>(
+                stream: _emergenciesStream,
+                builder: (context, snapshot) {
+                  if (snapshot.hasData && snapshot.data!.isNotEmpty) {
+                    final activeAlert = snapshot.data!.cast<Map<String, dynamic>?>().firstWhere(
+                      (item) => (item?['status'] ?? '').toString().toUpperCase() == 'OPEN',
+                      orElse: () => null,
+                    );
+                    if (activeAlert != null) {
+                      return _buildActiveEmergencyBanner(activeAlert);
+                    }
+                  }
+                  return const SizedBox.shrink();
+                },
+              ),
+
+              _buildSectionHeader('Live Location Tracking', Icons.location_on_outlined),
+              const SizedBox(height: 8),
+              _buildLiveLocationCard(),
+
+              const SizedBox(height: 24),
+
+              // --- INSERTED: OPTICAL SENTINEL SURVEILLANCE TILE ---
+              _buildSectionHeader('Optical CCTV Sentinel', Icons.videocam_outlined),
+              const SizedBox(height: 8),
+              _buildCctvSentinelCard(),
+
+              const SizedBox(height: 24),
+
+              _buildSectionHeader('Emergency & Wellness Feed', Icons.shield_outlined),
+              const SizedBox(height: 8),
+              _buildEmergencyFeedStream(),
+
+              const SizedBox(height: 60),
+            ],
+          ),
+        ),
+      ),
+    ),
+  );
+}
 }
