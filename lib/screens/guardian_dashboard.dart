@@ -938,8 +938,7 @@ class _GuardianDashboardState extends State<GuardianDashboard>
                           decoration: BoxDecoration(
                             color: Colors.green.shade50,
                             borderRadius: BorderRadius.circular(6),
-                            border: Border.parseBorderSide(BorderSide(
-                                color: Colors.green.shade300, width: 0.8)),
+                            border: Border.all(color: Colors.green.shade300, width: 0.8),
                           ),
                           child: Text(
                             'ARMED',

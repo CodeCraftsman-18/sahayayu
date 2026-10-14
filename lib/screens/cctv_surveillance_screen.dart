@@ -1,12 +1,13 @@
+import 'dart:async';
+import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
-import 'package:flutter_mjpeg/flutter_mjpeg.dart';
 
 class CctvSurveillanceScreen extends StatefulWidget {
   final String streamUrl;
 
   const CctvSurveillanceScreen({
     super.key,
-    // Defaults to your local IP Webcam endpoint or local Sentinel AI bridge
     this.streamUrl = 'http://192.168.1.33:8080/video',
   });
 
@@ -17,15 +18,94 @@ class CctvSurveillanceScreen extends StatefulWidget {
 class _CctvSurveillanceScreenState extends State<CctvSurveillanceScreen> {
   bool _isPlaying = true;
   late TextEditingController _urlController;
+  Uint8List? _currentFrame;
+  HttpClient? _client;
+  StreamSubscription? _subscription;
+  bool _hasError = false;
 
   @override
   void initState() {
     super.initState();
     _urlController = TextEditingController(text: widget.streamUrl);
+    _startStream();
+  }
+
+  void _startStream() async {
+    _stopStream();
+    if (!_isPlaying) return;
+
+    setState(() {
+      _hasError = false;
+      _currentFrame = null;
+    });
+
+    try {
+      _client = HttpClient()..connectionTimeout = const Duration(seconds: 5);
+      final uri = Uri.parse(_urlController.text.trim());
+      final request = await _client!.getUrl(uri);
+      final response = await request.close();
+
+      if (response.statusCode != 200) {
+        if (mounted) setState(() => _hasError = true);
+        return;
+      }
+
+      final List<int> buffer = [];
+
+      _subscription = response.listen(
+        (chunk) {
+          buffer.addAll(chunk);
+
+          // Find JPEG Start of Image (0xFF, 0xD8) and End of Image (0xFF, 0xD9)
+          int start = -1;
+          for (int i = 0; i < buffer.length - 1; i++) {
+            if (buffer[i] == 0xFF && buffer[i + 1] == 0xD8) {
+              start = i;
+              break;
+            }
+          }
+
+          if (start != -1) {
+            int end = -1;
+            for (int i = start; i < buffer.length - 1; i++) {
+              if (buffer[i] == 0xFF && buffer[i + 1] == 0xD9) {
+                end = i + 2;
+                break;
+              }
+            }
+
+            if (end != -1) {
+              final frameData = Uint8List.fromList(buffer.sublist(start, end));
+              buffer.removeRange(0, end);
+              if (mounted && _isPlaying) {
+                setState(() {
+                  _currentFrame = frameData;
+                  _hasError = false;
+                });
+              }
+            }
+          }
+        },
+        onError: (err) {
+          if (mounted) setState(() => _hasError = true);
+        },
+        cancelOnError: false,
+      );
+    } catch (_) {
+      if (mounted) setState(() => _hasError = true);
+    }
+  }
+
+  void _stopStream() {
+    _subscription?.cancel();
+    _subscription = null;
+    _client?.close(force: true);
+    _client = null;
   }
 
   @override
   void dispose() {
+    _stopStream();
     _urlController.dispose();
     super.dispose();
   }
@@ -46,6 +126,11 @@ class _CctvSurveillanceScreenState extends State<CctvSurveillanceScreen> {
               setState(() {
                 _isPlaying = !_isPlaying;
               });
+              if (_isPlaying) {
+                _startStream();
+              } else {
+                _stopStream();
+              }
             },
           ),
         ],
@@ -55,7 +140,6 @@ class _CctvSurveillanceScreenState extends State<CctvSurveillanceScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Live Stream Viewer Container
             ClipRRect(
               borderRadius: BorderRadius.circular(16),
               child: Container(
@@ -65,30 +149,31 @@ class _CctvSurveillanceScreenState extends State<CctvSurveillanceScreen> {
                 child: Stack(
                   fit: StackFit.expand,
                   children: [
-                    Mjpeg(
-                      isLive: _isPlaying,
-                      stream: _urlController.text.trim(),
-                      error: (context, error, stack) {
-                        return Center(
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              const Icon(Icons.videocam_off_outlined, color: Colors.redAccent, size: 48),
-                              const SizedBox(height: 10),
-                              Text(
-                                'Stream Offline or Unreachable\n$error',
-                                textAlign: TextAlign.center,
-                                style: const TextStyle(color: Colors.white70, fontSize: 12),
-                              ),
-                            ],
-                          ),
-                        );
-                      },
-                      loading: (context) => const Center(
+                    if (_hasError)
+                      const Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.videocam_off_outlined, color: Colors.redAccent, size: 48),
+                            SizedBox(height: 10),
+                            Text(
+                              'Stream Offline or Unreachable\nVerify IP Webcam URL and Subnet',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(color: Colors.white70, fontSize: 12),
+                            ),
+                          ],
+                        ),
+                      )
+                    else if (_currentFrame != null)
+                      Image.memory(
+                        _currentFrame!,
+                        gaplessPlayback: true,
+                        fit: BoxFit.cover,
+                      )
+                    else
+                      const Center(
                         child: CircularProgressIndicator(color: Colors.teal),
                       ),
-                    ),
-                    // Live Overlay Badge
                     Positioned(
                       top: 12,
                       left: 12,
@@ -125,10 +210,7 @@ class _CctvSurveillanceScreenState extends State<CctvSurveillanceScreen> {
                 ),
               ),
             ),
-
             const SizedBox(height: 20),
-
-            // Stream Source Configuration Card
             Card(
               color: const Color(0xFF1E293B),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -156,13 +238,13 @@ class _CctvSurveillanceScreenState extends State<CctvSurveillanceScreen> {
                         ),
                         suffixIcon: IconButton(
                           icon: const Icon(Icons.refresh, color: Colors.tealAccent),
-                          onPressed: () => setState(() {}),
+                          onPressed: () => _startStream(),
                         ),
                       ),
                     ),
                     const SizedBox(height: 10),
                     const Text(
-                      'Tip: Ensure your mobile phone and camera/PC are connected to the same Wi-Fi router subnet.',
+                      'Ensure your phone and camera are connected to the same Wi-Fi router subnet.',
                       style: TextStyle(color: Colors.white54, fontSize: 12),
                     ),
                   ],
