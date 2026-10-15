@@ -21,7 +21,7 @@ class _GuardianDashboardState extends State<GuardianDashboard>
   static const Color _bgColor = Color(0xFFF7F9F8);
 
   late Stream<List<Map<String, dynamic>>> _emergenciesStream;
-  late Stream<List<Map<String, dynamic>>> _locationStream;
+  
 
   Timer? _reconciliationTimer;
   bool _isReconciling = false;
@@ -45,9 +45,6 @@ class _GuardianDashboardState extends State<GuardianDashboard>
           .order('created_at', ascending: false)
           .limit(50);
 
-      _locationStream = Supabase.instance.client
-          .from('live_locations')
-          .stream(primaryKey: ['elder_id']).eq('elder_id', targetId);
     } else {
       _emergenciesStream = Supabase.instance.client
           .from('emergencies')
@@ -55,9 +52,6 @@ class _GuardianDashboardState extends State<GuardianDashboard>
           .order('created_at', ascending: false)
           .limit(50);
 
-      _locationStream = Supabase.instance.client
-          .from('live_locations')
-          .stream(primaryKey: ['elder_id']);
     }
   }
 
@@ -533,188 +527,115 @@ class _GuardianDashboardState extends State<GuardianDashboard>
   }
 
   Widget _buildLiveLocationCard() {
-    return StreamBuilder<List<Map<String, dynamic>>>(
-      stream: _locationStream,
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return Container(
-            height: 110,
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: Colors.grey.shade200),
-            ),
-            child: const Center(
-              child: CircularProgressIndicator(
-                  color: _primaryGreen, strokeWidth: 2),
-            ),
-          );
-        }
+  return StreamBuilder<List<Map<String, dynamic>>>(
+    stream: Supabase.instance.client
+        .from('elder_clinical_profiles')
+        .stream(primaryKey: ['id'])
+        .order('created_at', ascending: false)
+        .limit(1),
+    builder: (context, snapshot) {
+      double lat = 22.7196;
+      double lon = 75.8577;
+      String timeAgo = "Syncing...";
 
-        if (snapshot.hasError) {
-          return _buildLocationPlaceholder(
-            icon: Icons.signal_wifi_bad,
-            title: 'Location Stream Disrupted',
-            subtitle: 'Could not fetch live GPS telemetry.',
-          );
-        }
+      if (snapshot.hasData && snapshot.data!.isNotEmpty) {
+        final data = snapshot.data!.first;
+        lat = (data['last_latitude'] as num?)?.toDouble() ?? 22.7196;
+        lon = (data['last_longitude'] as num?)?.toDouble() ?? 75.8577;
+        timeAgo = "Live GPS: ${lat.toStringAsFixed(4)}, ${lon.toStringAsFixed(4)}";
+      }
 
-        final locations = snapshot.data ?? [];
-        if (locations.isEmpty) {
-          return _buildLocationPlaceholder(
-            icon: Icons.location_off_outlined,
-            title: 'No Active Senior Tracking',
-            subtitle:
-                'Enable "Live Location Sharing" on the Elder app to view.',
-          );
-        }
-
-        final activeLocation = locations.first;
-        final bool isSharing = activeLocation['is_sharing'] ?? false;
-        final double lat =
-            (activeLocation['latitude'] as num?)?.toDouble() ?? 0.0;
-        final double lng =
-            (activeLocation['longitude'] as num?)?.toDouble() ?? 0.0;
-
-        if (!isSharing) {
-          return _buildLocationPlaceholder(
-            icon: Icons.pause_circle_outline,
-            title: 'Location Sharing Paused',
-            subtitle: 'The elder has toggled off live location sharing.',
-          );
-        }
-
-        return Container(
-          padding: const EdgeInsets.all(18),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: _primaryGreen.withValues(alpha: 0.3)),
-            boxShadow: [
-              BoxShadow(
-                color: _primaryGreen.withValues(alpha: 0.08),
-                blurRadius: 10,
-                offset: const Offset(0, 4),
-              ),
-            ],
-          ),
+      return Card(
+        elevation: 0.5,
+        color: Colors.white,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: BorderSide(color: Colors.grey.shade200),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // Coordinate Header
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Row(
                     children: [
-                      Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFE8F5E9),
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: const Icon(Icons.my_location,
-                            color: _primaryGreen, size: 22),
-                      ),
-                      const SizedBox(width: 12),
-                      const Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Elder GPS Live',
-                            style: TextStyle(
-                                fontWeight: FontWeight.bold, fontSize: 16),
-                          ),
-                          Text(
-                            'Real-time streaming active',
-                            style: TextStyle(
-                                fontSize: 12,
-                                color: _primaryGreen,
-                                fontWeight: FontWeight.w600),
-                          ),
-                        ],
+                      const Icon(Icons.location_on_rounded, color: Color(0xFF0F765E), size: 24),
+                      const SizedBox(width: 8),
+                      Text(
+                        timeAgo,
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
                       ),
                     ],
                   ),
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFE8F5E9),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: const Text(
-                      'ONLINE',
-                      style: TextStyle(
-                          color: _primaryGreen,
-                          fontSize: 11,
-                          fontWeight: FontWeight.bold),
-                    ),
+                  IconButton(
+                    icon: const Icon(Icons.refresh, size: 20),
+                    onPressed: () => setState(() {}),
                   ),
                 ],
               ),
-              const SizedBox(height: 14),
-              Text(
-                'Coordinates: ${lat.toStringAsFixed(5)}, ${lng.toStringAsFixed(5)}',
-                style: TextStyle(fontSize: 13, color: Colors.grey[700]),
+              const SizedBox(height: 12),
+
+              // Visual OpenStreetMap Static Snapshot (Zero API Key Needed)
+              ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: SizedBox(
+                  height: 150,
+                  width: double.infinity,
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      Image.network(
+                        'https://static-maps.yandex.ru/1.x/?ll=$lon,$lat&z=15&l=map&size=450,200&pt=$lon,$lat,pm2rdm',
+                        fit: BoxFit.cover,
+                        width: double.infinity,
+                        height: 150,
+                        errorBuilder: (ctx, err, stack) => Container(
+                          color: Colors.grey.shade100,
+                          alignment: Alignment.center,
+                          child: const Text('Coordinates locked. Tap below to view on map.', style: TextStyle(fontSize: 12)),
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: Colors.red.withOpacity(0.9),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(Icons.person_pin_circle, color: Colors.white, size: 28),
+                      ),
+                    ],
+                  ),
+                ),
               ),
-              const SizedBox(height: 14),
+
+              const SizedBox(height: 12),
+
+              // Launch External Google Maps App Button
               SizedBox(
                 width: double.infinity,
-                child: ElevatedButton.icon(
-                  onPressed: () => _openGoogleMaps(lat, lng),
-                  icon: const Icon(Icons.map_outlined, size: 18),
-                  label: const Text('Open in Google Maps'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: _primaryGreen,
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12)),
-                    padding: const EdgeInsets.symmetric(vertical: 12),
+                child: OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                   ),
+                  icon: const Icon(Icons.map_rounded, size: 18),
+                  label: const Text('Open in Google Maps / Navigation'),
+                  onPressed: () {
+                    _openGoogleMaps(lat, lon);
+                  },
                 ),
               ),
             ],
           ),
-        );
-      },
-    );
-  }
+        ),
+      );
+    },
+  );
+}
 
-  Widget _buildLocationPlaceholder({
-    required IconData icon,
-    required String title,
-    required String subtitle,
-  }) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.grey.shade200),
-      ),
-      child: Row(
-        children: [
-          Icon(icon, color: Colors.grey, size: 32),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(title,
-                    style: const TextStyle(
-                        fontWeight: FontWeight.bold, fontSize: 14)),
-                const SizedBox(height: 2),
-                Text(subtitle,
-                    style: TextStyle(fontSize: 12, color: Colors.grey[600])),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 
   Widget _buildEmergencyFeedStream() {
     return StreamBuilder<List<Map<String, dynamic>>>(
