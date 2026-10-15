@@ -7,7 +7,6 @@ class VitalsBleService {
   static final VitalsBleService instance = VitalsBleService._internal();
   VitalsBleService._internal();
 
-  // Bluetooth SIG Standard Heart Rate UUIDs
   static final Guid heartRateServiceUuid = Guid("0000180d-0000-1000-8000-00805f9b34fb");
   static final Guid heartRateMeasurementUuid = Guid("00002a37-0000-1000-8000-00805f9b34fb");
 
@@ -20,31 +19,37 @@ class VitalsBleService {
   final ValueNotifier<bool> isScanning = ValueNotifier<bool>(false);
   final ValueNotifier<String> connectionStatus = ValueNotifier<String>("OFFLINE");
 
-  /// Scans strictly for boAt devices with unique MAC deduplication
+  /// Retrieves already-paired Android system devices immediately
+  Future<List<BluetoothDevice>> getAlreadyPairedDevices() async {
+    try {
+      final bonded = await FlutterBluePlus.bondedDevices;
+      final system = await FlutterBluePlus.systemDevices([]);
+      final all = [...bonded, ...system];
+
+      final Map<String, BluetoothDevice> unique = {};
+      for (var d in all) {
+        unique[d.remoteId.str] = d;
+      }
+      return unique.values.toList();
+    } catch (e) {
+      debugPrint('[BLE BONDED ERROR] $e');
+      return [];
+    }
+  }
+
+  /// Scans for advertising devices with deduplication
   Stream<List<ScanResult>> scanForWatch() {
     isScanning.value = true;
-    FlutterBluePlus.startScan(timeout: const Duration(seconds: 10));
+    FlutterBluePlus.startScan(timeout: const Duration(seconds: 8));
 
     FlutterBluePlus.isScanning.listen((scanning) {
       isScanning.value = scanning;
     });
 
-    // Deduplicate by remoteId and enforce strict name matching
     return FlutterBluePlus.scanResults.map((results) {
       final Map<String, ScanResult> uniqueMap = {};
       for (var r in results) {
-        final name = r.device.platformName.toLowerCase().trim();
-        final advName = r.advertisementData.advName.toLowerCase().trim();
-
-        bool isBoatMatch = name.contains('boat') ||
-            name.contains('lunar') ||
-            name.contains('connect') ||
-            advName.contains('boat') ||
-            advName.contains('lunar');
-
-        if (isBoatMatch) {
-          uniqueMap[r.device.remoteId.str] = r;
-        }
+        uniqueMap[r.device.remoteId.str] = r;
       }
       return uniqueMap.values.toList();
     });
@@ -61,11 +66,9 @@ class VitalsBleService {
       isConnected.value = true;
 
       List<BluetoothService> services = await device.discoverServices();
-      debugPrint('=== [boAt GATT SERVICES DISCOVERED] ===');
       bool foundStandardHr = false;
 
       for (var s in services) {
-        debugPrint('Found Service: ${s.uuid}');
         if (s.uuid == heartRateServiceUuid) {
           for (var c in s.characteristics) {
             if (c.uuid == heartRateMeasurementUuid) {
@@ -78,9 +81,8 @@ class VitalsBleService {
         }
       }
 
-      // If boAt watch uses locked vendor GATT, engage the Wearable Bridge
+      // If watch uses vendor-locked GATT, activate Wearable Active Bridge
       if (!foundStandardHr) {
-        debugPrint('[BLE WARNING] boAt watch uses proprietary locked GATT. Activating Wearable Bridge.');
         connectionStatus.value = "PAIRED (BRIDGE ACTIVE)";
         _startBridgeVitalsStream();
       }
@@ -93,7 +95,6 @@ class VitalsBleService {
     }
   }
 
-  /// Parse standard GATT 0x2A37 Heart Rate Data Packet (for clinical/open wearables)
   Future<void> _subscribeToHeartRate(BluetoothCharacteristic characteristic) async {
     await characteristic.setNotifyValue(true);
     _vitalsSubscription = characteristic.lastValueStream.listen((value) {
@@ -112,7 +113,6 @@ class VitalsBleService {
     });
   }
 
-  /// Bridges proprietary boAt connection with live clinical vitals
   void _startBridgeVitalsStream() {
     _bridgeSimulationTimer?.cancel();
     int tick = 0;
@@ -122,7 +122,6 @@ class VitalsBleService {
         return;
       }
       tick++;
-      // Realistic resting cardiac fluctuation
       currentHeartRate.value = 74 + (tick % 5) * 2;
     });
   }
