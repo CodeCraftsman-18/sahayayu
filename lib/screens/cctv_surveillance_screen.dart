@@ -8,7 +8,7 @@ class CctvSurveillanceScreen extends StatefulWidget {
 
   const CctvSurveillanceScreen({
     super.key,
-    this.streamUrl = 'http://192.168.1.33:8080/video',
+    this.streamUrl = 'http://192.168.1.10:8080/video',
   });
 
   @override

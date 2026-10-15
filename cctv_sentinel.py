@@ -8,6 +8,8 @@ from datetime import datetime, timezone
 
 # Suppress FFmpeg stream warnings
 os.environ["OPENCV_FFMPEG_LOGLEVEL"] = "-8"
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
+os.environ["GLOG_minloglevel"] = "2"
 
 # ==========================================
 # 1. BULLETPROOF .ENV LOADER (Strips Windows UTF-16 Null-Bytes & BOM)
@@ -313,11 +315,14 @@ try:
 
         cv2.imshow("SahayAyu - AI Living Room CCTV Sentinel", display_frame)
 
-        key = cv2.waitKey(1) & 0xFF
+        key = cv2.waitKey(5) & 0xFF
         if key == ord('q'):
+            print("\n[SENTINEL] Quit key 'Q' pressed.")
             break
         elif key == ord('p'):
             privacy_mode = not privacy_mode
+            print(f"[SENTINEL] Privacy Mode: {'ENABLED' if privacy_mode else 'DISABLED'}")
+
 
 except KeyboardInterrupt:
     print("\n[SENTINEL] Shutting down cleanly...")

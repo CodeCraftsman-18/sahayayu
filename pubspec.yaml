@@ -10,12 +10,14 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  flutter_blue_plus: ^1.34.5
 
   # UI & Icons
   cupertino_icons: ^1.0.8
 
   # Supabase & Backend
   supabase_flutter: ^2.8.0
+  flutter_mjpeg: ^2.0.4
 
   # Hardware, Geolocation & Native Services
   geolocator: ^13.0.0
@@ -42,6 +44,9 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+
+dependency_overrides:
+  http: ^1.2.0    
 
 # Only configure this if you have an image at assets/icon/app_icon.png
 # flutter_launcher_icons:
