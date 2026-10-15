@@ -31,6 +31,9 @@ class _ElderDashboardState extends State<ElderDashboard> {
   // boAt Lunar Connect simulated demo toggle for offline viva presentation
   bool _isDemoMode = false;
   Timer? _demoVitalsTimer;
+  // Vitals State
+  int _systolicBp = 124;
+  int _diastolicBp = 82;
 
   @override
   void initState() {
@@ -108,20 +111,31 @@ class _ElderDashboardState extends State<ElderDashboard> {
         }
       }
 
-      Position position = await Geolocator.getCurrentPosition(
+      // 1. Get cached position instantly (prevents indoor timeout)
+      Position? position = await Geolocator.getLastKnownPosition();
+      position ??= await Geolocator.getCurrentPosition(
         locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.high,
-          timeLimit: Duration(seconds: 10),
+          accuracy: LocationAccuracy.medium, // Medium accuracy is faster & works indoors
+          timeLimit: Duration(seconds: 8),
         ),
       );
 
       if (mounted) {
         setState(() {
           _currentPosition = position;
-          _locationStatus = "${position.latitude.toStringAsFixed(4)}, ${position.longitude.toStringAsFixed(4)}";
+          _locationStatus = "${position!.latitude.toStringAsFixed(4)}, ${position.longitude.toStringAsFixed(4)}";
         });
+
+        // 2. Broadcast live coordinates to Supabase for Guardian tracking
+        final supabase = Supabase.instance.client;
+        await supabase.from('elder_clinical_profiles').update({
+          'last_latitude': position.latitude,
+          'last_longitude': position.longitude,
+          'last_location_updated_at': DateTime.now().toUtc().toIso8601String(),
+        }).eq('elder_id', _clinicalProfile?['elder_id'] ?? 'elder_default');
       }
     } catch (e) {
+      debugPrint('[GPS ERROR] $e');
       if (mounted) setState(() => _locationStatus = "GPS Triangulated (Indore, MP)");
     }
   }
@@ -138,6 +152,7 @@ class _ElderDashboardState extends State<ElderDashboard> {
       final hr = VitalsBleService.instance.currentHeartRate.value;
       final int currentHr = hr > 0 ? hr : 88;
 
+      // 1. Dispatch Primary Emergency Alert
       final res = await supabase.from('emergencies').insert({
         'status': 'OPEN',
         'source': 'Elder Manual SOS Button (Mobile Interface)',
@@ -148,50 +163,65 @@ class _ElderDashboardState extends State<ElderDashboard> {
         'latitude': _currentPosition?.latitude ?? 22.7196,
         'longitude': _currentPosition?.longitude ?? 75.8577,
         'location': 'Home Quarters (GPS Triggered)',
-      }).select().single();
-
-      final emergencyId = res['id'];
-
-      // Autonomous SBAR synthesis
-      final conditions = (_clinicalProfile?['chronic_conditions'] as List?)?.cast<String>() ?? ['Hypertension'];
-      final onAnticoagulants = _clinicalProfile?['on_anticoagulants'] ?? false;
-      final riskLevel = _clinicalProfile?['risk_level'] ?? 'HIGH';
-
-      final sbarText = "[S] SITUATION:\nManual Panic SOS activated by elder.\n\n"
-          "[B] BACKGROUND:\nSTEADI Risk: $riskLevel. Comorbidities: ${conditions.join(', ')}. "
-          "Blood Thinners: ${onAnticoagulants ? 'YES (Bleed Risk)' : 'NO'}.\n\n"
-          "[A] ASSESSMENT:\nDistress signal received. Vital baseline: $currentHr BPM. Potential acute syncope or mobility failure.\n\n"
-          "[R] RECOMMENDATION:\nDispatch nearest PostGIS certified responder immediately. Prepare District Trauma Bay.";
-
-      await supabase.from('hospital_admissions').insert({
-        'emergency_id': emergencyId,
-        'elder_id': _clinicalProfile?['elder_id'],
-        'hospital_name': 'District Trauma Center / MY Hospital',
-        'triage_level': onAnticoagulants ? 'RED (Critical)' : 'YELLOW (Urgent)',
-        'pre_existing_conditions': conditions,
-        'on_blood_thinners': onAnticoagulants,
-        'vitals_snapshot': {'heart_rate': currentHr, 'systolic_bp': 128, 'diastolic_bp': 84},
-        'sbar_briefing': sbarText,
-        'status': 'INCOMING',
-      });
+      }).select('id').maybeSingle();
 
       if (!mounted) return;
+
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           backgroundColor: _accentRed,
-          content: Text('🚨 SOS Alert and SBAR Handover Dispatched!'),
+          content: Text('🚨 SOS Alert Dispatched Successfully!'),
         ),
       );
+
+      // 2. Synthesize and Dispatch Hospital SBAR Handover (Safely isolated)
+      if (res != null && res['id'] != null) {
+        try {
+          final emergencyId = res['id'];
+          final conditions = (_clinicalProfile?['chronic_conditions'] as List?)?.cast<String>() ?? ['Hypertension'];
+          final onAnticoagulants = _clinicalProfile?['on_anticoagulants'] ?? false;
+          final riskLevel = _clinicalProfile?['risk_level'] ?? 'HIGH';
+
+          final sbarText = "[S] SITUATION:\nManual Panic SOS activated by elder.\n\n"
+              "[B] BACKGROUND:\nSTEADI Risk: $riskLevel. Comorbidities: ${conditions.join(', ')}. "
+              "Blood Thinners: ${onAnticoagulants ? 'YES (Bleed Risk)' : 'NO'}.\n\n"
+              "[A] ASSESSMENT:\nDistress signal received. Vital baseline: $currentHr BPM. Potential acute syncope or mobility failure.\n\n"
+              "[R] RECOMMENDATION:\nDispatch nearest PostGIS certified responder immediately. Prepare District Trauma Bay.";
+
+          await supabase.from('hospital_admissions').insert({
+            'emergency_id': emergencyId,
+            'elder_id': _clinicalProfile?['elder_id'],
+            'hospital_name': 'District Trauma Center / MY Hospital',
+            'triage_level': onAnticoagulants ? 'RED (Critical)' : 'YELLOW (Urgent)',
+            'pre_existing_conditions': conditions,
+            'on_blood_thinners': onAnticoagulants,
+            'vitals_snapshot': {'heart_rate': currentHr, 'systolic_bp': 128, 'diastolic_bp': 84},
+            'sbar_briefing': sbarText,
+            'status': 'INCOMING',
+          });
+        } catch (sbarError) {
+          debugPrint('[SBAR ERROR] Secondary hospital logging failed: $sbarError');
+        }
+      }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to trigger SOS: $e')),
+      showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('SOS Trigger Error', style: TextStyle(color: Colors.red)),
+          content: SelectableText('Error details:\n$e'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
       );
     } finally {
       if (mounted) setState(() => _isSendingSos = false);
     }
   }
-
   // ===========================================================================
   // 3. boAt LUNAR CONNECT PAIRING MODAL
   // ===========================================================================
@@ -302,13 +332,23 @@ class _ElderDashboardState extends State<ElderDashboard> {
       _demoVitalsTimer = Timer.periodic(const Duration(seconds: 3), (timer) {
         final mockHr = (74 + (timer.tick % 5) * 3);
         VitalsBleService.instance.currentHeartRate.value = mockHr;
+
+        // Modulate BP realistically alongside pulse
+        setState(() {
+          _systolicBp = 120 + (timer.tick % 4) * 2;
+          _diastolicBp = 80 + (timer.tick % 3);
+        });
       });
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Wearable Simulation Demo Active (Streaming Mock BPM)')),
+        const SnackBar(content: Text('Wearable Simulation Demo Active (Streaming Live HR & BP)')),
       );
     } else {
       _demoVitalsTimer?.cancel();
       VitalsBleService.instance.currentHeartRate.value = 0;
+      setState(() {
+        _systolicBp = 124;
+        _diastolicBp = 82;
+      });
     }
   }
 
@@ -427,12 +467,16 @@ class _ElderDashboardState extends State<ElderDashboard> {
     return Card(
       elevation: 0.5,
       color: Colors.white,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: BorderSide(color: Colors.grey.shade200)),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(color: Colors.grey.shade200),
+      ),
       child: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // Top Row: Watch Branding & Status Badge
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -440,38 +484,53 @@ class _ElderDashboardState extends State<ElderDashboard> {
                   children: [
                     Container(
                       padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(color: _primaryGreen.withOpacity(0.12), shape: BoxShape.circle),
+                      decoration: BoxDecoration(
+                        color: _primaryGreen.withOpacity(0.12),
+                        shape: BoxShape.circle,
+                      ),
                       child: const Icon(Icons.watch_rounded, color: _primaryGreen, size: 24),
                     ),
                     const SizedBox(width: 12),
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text('boAt Lunar Connect', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                        const Text(
+                          'boAt Lunar Connect',
+                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                        ),
                         Text(
-                          _isDemoMode ? 'SIMULATED TELEMETRY' : 'BLUETOOTH GATT (0x180D)',
-                          style: TextStyle(color: Colors.grey.shade500, fontSize: 10, fontWeight: FontWeight.w600),
+                          _isDemoMode ? 'SIMULATED CLINICAL STREAM' : 'BLUETOOTH GATT (0x180D)',
+                          style: TextStyle(
+                            color: Colors.grey.shade500,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                       ],
                     ),
                   ],
                 ),
-                ValueListenableBuilder<bool>(
-                  valueListenable: VitalsBleService.instance.isConnected,
-                  builder: (context, connected, _) {
-                    final isOnline = connected || _isDemoMode;
+                ValueListenableBuilder<String>(
+                  valueListenable: VitalsBleService.instance.connectionStatus,
+                  builder: (context, status, _) {
+                    final isOnline = _isDemoMode || status.contains("STREAMING");
+                    final badgeText = _isDemoMode ? "STREAMING" : status;
                     return Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                       decoration: BoxDecoration(
-                        color: isOnline ? Colors.green.shade50 : Colors.grey.shade100,
+                        color: isOnline ? Colors.green.shade50 : Colors.amber.shade50,
                         borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: isOnline ? Colors.green.shade300 : Colors.amber.shade300,
+                          width: 0.8,
+                        ),
                       ),
                       child: Text(
-                        isOnline ? 'STREAMING' : 'OFFLINE',
+                        badgeText,
                         style: TextStyle(
                           fontSize: 10,
                           fontWeight: FontWeight.bold,
-                          color: isOnline ? Colors.green.shade800 : Colors.grey.shade600,
+                          color: isOnline ? Colors.green.shade800 : Colors.amber.shade900,
                         ),
                       ),
                     );
@@ -479,47 +538,119 @@ class _ElderDashboardState extends State<ElderDashboard> {
                 ),
               ],
             ),
+
             const SizedBox(height: 16),
-            ValueListenableBuilder<int>(
-              valueListenable: VitalsBleService.instance.currentHeartRate,
-              builder: (context, hr, _) {
-                return Row(
-                  children: [
-                    const Icon(Icons.favorite_rounded, color: Colors.redAccent, size: 36),
-                    const SizedBox(width: 10),
-                    Column(
+
+            // Middle Section: Dual Telemetry Columns (HR & BP)
+            Row(
+              children: [
+                // 1. Heart Rate Column
+                Expanded(
+                  child: Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.red.shade50.withOpacity(0.5),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.red.shade100),
+                    ),
+                    child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          hr > 0 ? '$hr BPM' : '-- BPM',
-                          style: const TextStyle(fontSize: 26, fontWeight: FontWeight.bold),
+                        Row(
+                          children: [
+                            const Icon(Icons.favorite_rounded, color: Colors.redAccent, size: 20),
+                            const SizedBox(width: 6),
+                            Text('Heart Rate', style: TextStyle(fontSize: 12, color: Colors.grey.shade700, fontWeight: FontWeight.w600)),
+                          ],
                         ),
-                        Text('Resting Vitals', style: TextStyle(fontSize: 11, color: Colors.grey.shade600)),
+                        const SizedBox(height: 8),
+                        ValueListenableBuilder<int>(
+                          valueListenable: VitalsBleService.instance.currentHeartRate,
+                          builder: (context, hr, _) {
+                            return Text(
+                              hr > 0 ? '$hr' : '--',
+                              style: const TextStyle(fontSize: 26, fontWeight: FontWeight.bold, color: Colors.black87),
+                            );
+                          },
+                        ),
+                        Text('BPM (Resting)', style: TextStyle(fontSize: 10, color: Colors.grey.shade600)),
                       ],
                     ),
-                    const Spacer(),
-                    OutlinedButton.icon(
-                      style: OutlinedButton.styleFrom(
-                        side: BorderSide(color: Colors.grey.shade300),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                      ),
-                      icon: Icon(_isDemoMode ? Icons.stop : Icons.play_arrow, size: 16, color: Colors.black87),
-                      label: Text(_isDemoMode ? 'Stop Demo' : 'Demo Mode', style: const TextStyle(fontSize: 11, color: Colors.black87)),
-                      onPressed: _toggleVitalsSimulation,
+                  ),
+                ),
+
+                const SizedBox(width: 12),
+
+                // 2. Blood Pressure Column
+                Expanded(
+                  child: Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.blue.shade50.withOpacity(0.5),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.blue.shade100),
                     ),
-                    const SizedBox(width: 6),
-                    ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: _primaryGreen,
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                      ),
-                      onPressed: _showSmartwatchPairingDialog,
-                      child: const Text('Pair Watch', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            const Icon(Icons.speed_rounded, color: Colors.blueAccent, size: 20),
+                            const SizedBox(width: 6),
+                            Text('Blood Pressure', style: TextStyle(fontSize: 12, color: Colors.grey.shade700, fontWeight: FontWeight.w600)),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          '$_systolicBp/$_diastolicBp',
+                          style: const TextStyle(fontSize: 26, fontWeight: FontWeight.bold, color: Colors.black87),
+                        ),
+                        Text('mmHg (Sys/Dia)', style: TextStyle(fontSize: 10, color: Colors.grey.shade600)),
+                      ],
                     ),
-                  ],
-                );
-              },
+                  ),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 14),
+
+            // Bottom Buttons
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      side: BorderSide(color: Colors.grey.shade300),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                    icon: Icon(_isDemoMode ? Icons.stop_rounded : Icons.play_arrow_rounded, size: 18),
+                    label: Text(
+                      _isDemoMode ? 'Stop Demo' : 'Demo Stream',
+                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                    ),
+                    onPressed: _toggleVitalsSimulation,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      backgroundColor: _primaryGreen,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                    icon: const Icon(Icons.bluetooth_searching_rounded, size: 18),
+                    label: const Text(
+                      'Pair Watch',
+                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                    ),
+                    onPressed: _showSmartwatchPairingDialog,
+                  ),
+                ),
+              ],
             ),
           ],
         ),
