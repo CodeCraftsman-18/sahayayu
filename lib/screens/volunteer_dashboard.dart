@@ -236,12 +236,23 @@ class _VolunteerDashboardState extends State<VolunteerDashboard> {
     }
   }
 
-  Future<void> _openExternalMap(double lat, double lng) async {
-    final uri = Uri.parse('https://www.google.com/maps/search/?api=1&query=$lat,$lng');
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
+  Future<void> _openGoogleMapsNavigation(double lat, double lng) async {
+  // Universal geo intent that works on both Android and iOS
+  final Uri googleMapsUri = Uri.parse('https://www.google.com/maps/search/?api=1&query=$lat,$lng');
+  
+  try {
+    if (await canLaunchUrl(googleMapsUri)) {
+      await launchUrl(
+        googleMapsUri,
+        mode: LaunchMode.externalApplication, // Forces opening in the native Google Maps app
+      );
+    } else {
+      debugPrint('[MAP ERROR] Could not launch maps URL.');
     }
+  } catch (e) {
+    debugPrint('[MAP EXCEPTION] $e');
   }
+}
 
   Future<void> _acceptEmergency(int id) async {
     try {
@@ -466,7 +477,7 @@ class _VolunteerDashboardState extends State<VolunteerDashboard> {
                               ),
                               icon: const Icon(Icons.map_outlined, size: 14),
                               label: const Text('Map', style: TextStyle(fontSize: 12)),
-                              onPressed: () => _openExternalMap(lat, lng),
+                              onPressed: () => _openGoogleMapsNavigation(lat, lng),
                             ),
                           ],
                         ),

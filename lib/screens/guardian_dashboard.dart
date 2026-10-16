@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'login_screen.dart';
 import 'cctv_surveillance_screen.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class GuardianDashboard extends StatefulWidget {
   const GuardianDashboard({super.key});
@@ -30,8 +31,7 @@ class _GuardianDashboardState extends State<GuardianDashboard> {
     final client = Supabase.instance.client;
     _emergenciesStream = client
         .from('emergencies')
-        .stream(primaryKey: ['id'])
-        .order('created_at', ascending: false);
+        .stream(primaryKey: ['id']).order('created_at', ascending: false);
 
     _profileStream = client
         .from('elder_clinical_profiles')
@@ -40,10 +40,23 @@ class _GuardianDashboardState extends State<GuardianDashboard> {
         .limit(1);
   }
 
-  Future<void> _openGoogleMaps(double lat, double lon) async {
-    final uri = Uri.parse('https://www.google.com/maps/search/?api=1&query=$lat,$lon');
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
+  Future<void> _openGoogleMapsNavigation(double lat, double lng) async {
+    // Universal geo intent that works on both Android and iOS
+    final Uri googleMapsUri =
+        Uri.parse('https://www.google.com/maps/search/?api=1&query=$lat,$lng');
+
+    try {
+      if (await canLaunchUrl(googleMapsUri)) {
+        await launchUrl(
+          googleMapsUri,
+          mode: LaunchMode
+              .externalApplication, // Forces opening in the native Google Maps app
+        );
+      } else {
+        debugPrint('[MAP ERROR] Could not launch maps URL.');
+      }
+    } catch (e) {
+      debugPrint('[MAP EXCEPTION] $e');
     }
   }
 
@@ -145,7 +158,8 @@ class _GuardianDashboardState extends State<GuardianDashboard> {
         children: [
           Row(
             children: [
-              const Icon(Icons.warning_amber_rounded, color: _accentRed, size: 36),
+              const Icon(Icons.warning_amber_rounded,
+                  color: _accentRed, size: 36),
               const SizedBox(width: 14),
               Expanded(
                 child: Column(
@@ -162,7 +176,8 @@ class _GuardianDashboardState extends State<GuardianDashboard> {
                     const SizedBox(height: 4),
                     Text(
                       'Source: ${activeAlert['source'] ?? 'Alert Triggered'}\nResponders and Trauma Bay alerted.',
-                      style: const TextStyle(fontSize: 12, color: Colors.black87),
+                      style:
+                          const TextStyle(fontSize: 12, color: Colors.black87),
                     ),
                   ],
                 ),
@@ -204,11 +219,13 @@ class _GuardianDashboardState extends State<GuardianDashboard> {
                   children: [
                     Row(
                       children: [
-                        const Icon(Icons.my_location_rounded, color: _primaryGreen, size: 20),
+                        const Icon(Icons.my_location_rounded,
+                            color: _primaryGreen, size: 20),
                         const SizedBox(width: 8),
                         Text(
                           '${lat.toStringAsFixed(4)}, ${lon.toStringAsFixed(4)}',
-                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                          style: const TextStyle(
+                              fontWeight: FontWeight.bold, fontSize: 14),
                         ),
                       ],
                     ),
@@ -223,12 +240,18 @@ class _GuardianDashboardState extends State<GuardianDashboard> {
                   width: double.infinity,
                   child: OutlinedButton.icon(
                     style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 10),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10)),
                     ),
-                    icon: const Icon(Icons.map_rounded, size: 18),
-                    label: const Text('Open in Google Maps / Navigation'),
-                    onPressed: () => _openGoogleMaps(lat, lon),
+                    icon: const Icon(Icons.map_rounded,
+                        size: 18, color: Color(0xFF0F765E)),
+                    label: const Text('Open in Google Maps / Navigation',
+                        style: TextStyle(
+                            color: Colors.black87,
+                            fontWeight: FontWeight.bold)),
+                    onPressed: () => _openGoogleMapsNavigation(
+                        lat, lon), // Uses live elder coordinates
                   ),
                 ),
               ],
@@ -267,7 +290,8 @@ class _GuardianDashboardState extends State<GuardianDashboard> {
                   color: _primaryGreen.withOpacity(0.12),
                   shape: BoxShape.circle,
                 ),
-                child: const Icon(Icons.videocam_rounded, color: _primaryGreen, size: 26),
+                child: const Icon(Icons.videocam_rounded,
+                    color: _primaryGreen, size: 26),
               ),
               const SizedBox(width: 14),
               Expanded(
@@ -278,15 +302,18 @@ class _GuardianDashboardState extends State<GuardianDashboard> {
                       children: [
                         const Text(
                           'Optical CCTV Sentinel',
-                          style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                          style: TextStyle(
+                              fontSize: 15, fontWeight: FontWeight.bold),
                         ),
                         const SizedBox(width: 8),
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 6, vertical: 2),
                           decoration: BoxDecoration(
                             color: Colors.green.shade50,
                             borderRadius: BorderRadius.circular(6),
-                            border: Border.all(color: Colors.green.shade300, width: 0.8),
+                            border: Border.all(
+                                color: Colors.green.shade300, width: 0.8),
                           ),
                           child: Text(
                             'ARMED',
@@ -302,12 +329,14 @@ class _GuardianDashboardState extends State<GuardianDashboard> {
                     const SizedBox(height: 4),
                     Text(
                       'Tap to view real-time feed & room coverage',
-                      style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                      style:
+                          TextStyle(fontSize: 12, color: Colors.grey.shade600),
                     ),
                   ],
                 ),
               ),
-              Icon(Icons.arrow_forward_ios_rounded, size: 16, color: Colors.grey.shade400),
+              Icon(Icons.arrow_forward_ios_rounded,
+                  size: 16, color: Colors.grey.shade400),
             ],
           ),
         ),
@@ -323,7 +352,8 @@ class _GuardianDashboardState extends State<GuardianDashboard> {
           return const Card(
             child: Padding(
               padding: EdgeInsets.all(16),
-              child: Text('No past incidents recorded.', style: TextStyle(color: Colors.grey)),
+              child: Text('No past incidents recorded.',
+                  style: TextStyle(color: Colors.grey)),
             ),
           );
         }
@@ -336,7 +366,8 @@ class _GuardianDashboardState extends State<GuardianDashboard> {
           separatorBuilder: (_, __) => const SizedBox(height: 8),
           itemBuilder: (context, index) {
             final e = items[index];
-            final isOpen = (e['status'] ?? '').toString().toUpperCase() == 'OPEN';
+            final isOpen =
+                (e['status'] ?? '').toString().toUpperCase() == 'OPEN';
 
             return Card(
               elevation: 0.5,
@@ -347,12 +378,15 @@ class _GuardianDashboardState extends State<GuardianDashboard> {
               ),
               child: ListTile(
                 leading: Icon(
-                  isOpen ? Icons.warning_amber_rounded : Icons.check_circle_outline,
+                  isOpen
+                      ? Icons.warning_amber_rounded
+                      : Icons.check_circle_outline,
                   color: isOpen ? _accentRed : _primaryGreen,
                 ),
                 title: Text(
                   e['source'] ?? 'Alert',
-                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                  style: const TextStyle(
+                      fontWeight: FontWeight.bold, fontSize: 13),
                 ),
                 subtitle: Text(
                   'HR: ${e['heart_rate'] ?? "--"} BPM • SI: ${e['shock_index'] ?? "--"}',
@@ -420,10 +454,16 @@ class _GuardianDashboardState extends State<GuardianDashboard> {
                   stream: _emergenciesStream,
                   builder: (context, snapshot) {
                     if (snapshot.hasData && snapshot.data!.isNotEmpty) {
-                      final activeAlert = snapshot.data!.cast<Map<String, dynamic>?>().firstWhere(
-                        (item) => (item?['status'] ?? '').toString().toUpperCase() == 'OPEN',
-                        orElse: () => null,
-                      );
+                      final activeAlert = snapshot.data!
+                          .cast<Map<String, dynamic>?>()
+                          .firstWhere(
+                            (item) =>
+                                (item?['status'] ?? '')
+                                    .toString()
+                                    .toUpperCase() ==
+                                'OPEN',
+                            orElse: () => null,
+                          );
                       if (activeAlert != null) {
                         return _buildActiveEmergencyBanner(activeAlert);
                       }
@@ -431,23 +471,20 @@ class _GuardianDashboardState extends State<GuardianDashboard> {
                     return const SizedBox.shrink();
                   },
                 ),
-
-                _buildSectionHeader('Live Location Tracking', Icons.location_on_outlined),
+                _buildSectionHeader(
+                    'Live Location Tracking', Icons.location_on_outlined),
                 const SizedBox(height: 8),
                 _buildLiveLocationCard(),
-
                 const SizedBox(height: 24),
-
-                _buildSectionHeader('Optical CCTV Sentinel', Icons.videocam_outlined),
+                _buildSectionHeader(
+                    'Optical CCTV Sentinel', Icons.videocam_outlined),
                 const SizedBox(height: 8),
                 _buildCctvSentinelCard(),
-
                 const SizedBox(height: 24),
-
-                _buildSectionHeader('Emergency & Wellness Feed', Icons.shield_outlined),
+                _buildSectionHeader(
+                    'Emergency & Wellness Feed', Icons.shield_outlined),
                 const SizedBox(height: 8),
                 _buildEmergencyFeedStream(),
-
                 const SizedBox(height: 60),
               ],
             ),

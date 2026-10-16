@@ -4,7 +4,7 @@ import 'package:google_generative_ai/google_generative_ai.dart';
 // LowerCamelCase identifier to comply with Dart lint rules
 const String geminiApiKey = String.fromEnvironment(
   'GEMINI_API_KEY',
-  defaultValue: '', 
+  defaultValue: 'AQ.Ab8RN6KCGCN6oPRid8L51GgRuTWcCVbc4dQdwN7sFnp-LHkDCg', 
 );
 
 class AiChatScreen extends StatefulWidget {
