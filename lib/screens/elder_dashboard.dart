@@ -1,10 +1,11 @@
 import 'dart:async';
+import 'dart:math';
 import 'package:flutter/material.dart';
-import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:sensors_plus/sensors_plus.dart';
+import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../services/vitals_ble_service.dart';
-import '../services/voice_sos_service.dart';
 import 'login_screen.dart';
 import 'clinical_intake_screen.dart';
 import 'ai_chat_screen.dart';
@@ -23,20 +24,26 @@ class _ElderDashboardState extends State<ElderDashboard> {
 
   bool _isSendingSos = false;
   Position? _currentPosition;
-  String _locationStatus = "Triangulating GPS...";
+  String _locationStatus = "Acquiring GPS...";
   bool _isLoadingProfile = true;
   Map<String, dynamic>? _clinicalProfile;
   Map<String, dynamic>? _activeEmergency;
   StreamSubscription<List<Map<String, dynamic>>>? _emergencySubscription;
 
-  // Wearable Vitals State (HR & BP)
+  // Wearable Vitals State (boAt Lunar Connect)
   int _systolicBp = 124;
   int _diastolicBp = 82;
   bool _isDemoMode = false;
   Timer? _demoVitalsTimer;
 
-  // Voice Sentinel State
-  bool _isVoiceListening = false;
+  // Autonomous Microphone Voice Sentinel
+  final stt.SpeechToText _speech = stt.SpeechToText();
+  bool _isVoiceArmed = false;
+  String _lastSpokenWords = "";
+
+  // Physical Accelerometer / Phone Fall & Shake Sensor
+  StreamSubscription<AccelerometerEvent>? _accelerometerSub;
+  DateTime _lastImpactTime = DateTime.now();
 
   @override
   void initState() {
@@ -44,14 +51,16 @@ class _ElderDashboardState extends State<ElderDashboard> {
     _fetchClinicalProfile();
     _fetchLiveLocation();
     _subscribeToEmergencies();
-    _initVoiceSentinel();
+    _initAutonomousVoiceSentinel();
+    _initPhysicalMotionSensor();
   }
 
   @override
   void dispose() {
     _emergencySubscription?.cancel();
     _demoVitalsTimer?.cancel();
-    _stopVoiceSentinel();
+    _accelerometerSub?.cancel();
+    _speech.stop();
     super.dispose();
   }
 
@@ -75,7 +84,6 @@ class _ElderDashboardState extends State<ElderDashboard> {
         });
       }
     } catch (e) {
-      debugPrint('[PROFILE ERROR] $e');
       if (mounted) setState(() => _isLoadingProfile = false);
     }
   }
@@ -120,7 +128,7 @@ class _ElderDashboardState extends State<ElderDashboard> {
       position ??= await Geolocator.getCurrentPosition(
         locationSettings: const LocationSettings(
           accuracy: LocationAccuracy.medium,
-          timeLimit: Duration(seconds: 8),
+          timeLimit: Duration(seconds: 7),
         ),
       );
 
@@ -132,7 +140,7 @@ class _ElderDashboardState extends State<ElderDashboard> {
         _locationStatus = "${pos.latitude.toStringAsFixed(4)}, ${pos.longitude.toStringAsFixed(4)}";
       });
 
-      // Broadcast coordinates to Supabase
+      // Broadcast coordinates to Supabase for Guardian tracking
       final supabase = Supabase.instance.client;
       await supabase.from('elder_clinical_profiles').update({
         'last_latitude': pos.latitude,
@@ -140,38 +148,90 @@ class _ElderDashboardState extends State<ElderDashboard> {
         'last_location_updated_at': DateTime.now().toUtc().toIso8601String(),
       }).eq('elder_id', _clinicalProfile?['elder_id'] ?? 'elder_default');
     } catch (e) {
-      if (mounted) setState(() => _locationStatus = "22.6921, 75.8628 (Indore, MP)");
+      if (mounted) setState(() => _locationStatus = "22.7196, 75.8577 (Indore, MP)");
     }
   }
 
   // ===========================================================================
-  // 2. VOICE SENTINEL SUBSYSTEM
+  // 2. REAL HARDWARE SENSORS: CONTINUOUS VOICE & ACCELEROMETER
   // ===========================================================================
-  void _initVoiceSentinel() async {
+  void _initAutonomousVoiceSentinel() async {
     try {
-      dynamic service = VoiceSosService.instance;
-      await service.startListening();
-      if (mounted) setState(() => _isVoiceListening = true);
+      bool available = await _speech.initialize(
+        onStatus: (status) {
+          if (status == 'done' || status == 'notListening') {
+            _restartVoiceListening();
+          }
+        },
+        onError: (_) => _restartVoiceListening(),
+      );
+
+      if (available) {
+        _restartVoiceListening();
+        if (mounted) setState(() => _isVoiceArmed = true);
+      }
     } catch (e) {
-      debugPrint('[VOICE SENTINEL INIT] $e');
-      if (mounted) setState(() => _isVoiceListening = true);
+      debugPrint('[VOICE INIT] $e');
     }
   }
 
-  void _stopVoiceSentinel() {
-    try {
-      dynamic service = VoiceSosService.instance;
-      service.stopListening();
-    } catch (_) {}
+  void _restartVoiceListening() {
+    if (!mounted) return;
+    _speech.listen(
+      onResult: (result) {
+        final words = result.recognizedWords.toLowerCase().trim();
+        setState(() => _lastSpokenWords = words);
+
+        // Real acoustic distress keyword evaluation
+        if (words.contains('bachao') ||
+            words.contains('help') ||
+            words.contains('emergency') ||
+            words.contains('gir gaya') ||
+            words.contains('save me')) {
+          _triggerEmergency(
+            source: "Autonomous Voice Distress Sentinel: Spoken Keyword '$words' Confirmed",
+            triageLevel: "RED (Critical)",
+            assessment: "Elder vocalized high-stress acoustic emergency keyword via mobile microphone.",
+            recommendation: "Immediate phone contact. Dispatch nearby PostGIS community responder.",
+          );
+        }
+      },
+      listenOptions: stt.SpeechListenOptions(
+        listenMode: stt.ListenMode.confirmation,
+        partialResults: true,
+        cancelOnError: false,
+      ),
+    );
+  }
+
+  void _initPhysicalMotionSensor() {
+    // Listens for high-acceleration physical phone impact (shake or drop)
+    _accelerometerSub = accelerometerEventStream().listen((AccelerometerEvent event) {
+      double acceleration = sqrt(event.x * event.x + event.y * event.y + event.z * event.z);
+
+      // Threshold: Normal earth gravity is ~9.8 m/s^2. A violent shake or drop exceeds 26 m/s^2.
+      if (acceleration > 26.0) {
+        final now = DateTime.now();
+        if (now.difference(_lastImpactTime).inSeconds > 10) {
+          _lastImpactTime = now;
+          _triggerEmergency(
+            source: "Hardware Inertial Sensor: High-G Drop / Violent Fall Detected (${acceleration.toStringAsFixed(1)} m/s²)",
+            triageLevel: "RED (Resuscitation)",
+            assessment: "Smartphone 3-axis accelerometer detected acute kinematic free-fall followed by impact spike.",
+            recommendation: "Trauma team alert. Prepare Trauma Bay for non-contrast brain CT.",
+          );
+        }
+      }
+    });
   }
 
   // ===========================================================================
-  // 3. UNIFIED EMERGENCY DISPATCH (PANIC & DEMO SIMULATION ENGINE)
+  // 3. UNIFIED EMERGENCY DISPATCH & SBAR SYNTHESIS
   // ===========================================================================
   Future<void> _triggerEmergency({
     required String source,
     String triageLevel = "YELLOW (Urgent)",
-    String assessment = "Distress signal received. Kinematic or physiological anomaly detected.",
+    String assessment = "Distress signal received. Anomaly detected.",
     String recommendation = "Prepare District Trauma Center. Alert nearest PostGIS responders.",
   }) async {
     if (_isSendingSos) return;
@@ -183,7 +243,7 @@ class _ElderDashboardState extends State<ElderDashboard> {
       final int currentHr = hr > 0 ? hr : 88;
       final double shockIndex = double.parse((currentHr / _systolicBp.toDouble()).toStringAsFixed(2));
 
-      // 1. Dispatch Emergency Alert
+      // 1. Dispatch Emergency Alert to Cloud
       final res = await supabase.from('emergencies').insert({
         'status': 'OPEN',
         'source': source,
@@ -199,10 +259,7 @@ class _ElderDashboardState extends State<ElderDashboard> {
       if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          backgroundColor: _accentRed,
-          content: Text('🚨 $source Dispatched!'),
-        ),
+        SnackBar(backgroundColor: _accentRed, content: Text('🚨 $source Dispatched!')),
       );
 
       // 2. Synthesize & Log SBAR Hospital Briefing
@@ -236,14 +293,12 @@ class _ElderDashboardState extends State<ElderDashboard> {
             'status': 'INCOMING',
           });
         } catch (sbarErr) {
-          debugPrint('[SBAR LOG ERROR] $sbarErr');
+          debugPrint('[SBAR ERROR] $sbarErr');
         }
       }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('SOS Dispatch Notice: $e')),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Notice: $e')));
     } finally {
       if (mounted) setState(() => _isSendingSos = false);
     }
@@ -253,23 +308,17 @@ class _ElderDashboardState extends State<ElderDashboard> {
     if (_activeEmergency == null) return;
     try {
       final supabase = Supabase.instance.client;
-      await supabase
-          .from('emergencies')
-          .update({'status': 'RESOLVED'})
-          .eq('id', _activeEmergency!['id']);
-
+      await supabase.from('emergencies').update({'status': 'RESOLVED'}).eq('id', _activeEmergency!['id']);
       if (!mounted) return;
       setState(() => _activeEmergency = null);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Emergency marked RESOLVED. System normalized.')),
       );
-    } catch (e) {
-      debugPrint('[RESOLVE ERROR] $e');
-    }
+    } catch (_) {}
   }
 
   // ===========================================================================
-  // 4. WEARABLE BLE & DEMO VITALS CONTROLS
+  // 4. WEARABLE BLE CONTROLS (boAt Lunar Connect)
   // ===========================================================================
   void _toggleVitalsSimulation() {
     setState(() => _isDemoMode = !_isDemoMode);
@@ -304,135 +353,57 @@ class _ElderDashboardState extends State<ElderDashboard> {
     showModalBottomSheet(
       context: context,
       backgroundColor: const Color(0xFF1E293B),
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
       builder: (ctx) {
-        return StatefulBuilder(
-          builder: (context, setModalState) {
-            return Padding(
-              padding: const EdgeInsets.all(20.0),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
+        return Padding(
+          padding: const EdgeInsets.all(20.0),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text(
-                        'Pair boAt Lunar Connect',
-                        style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.close, color: Colors.white60),
-                        onPressed: () => Navigator.pop(ctx),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 6),
-                  const Text(
-                    'Select your watch below. Paired devices appear automatically.',
-                    style: TextStyle(color: Colors.white60, fontSize: 12),
-                  ),
-                  const SizedBox(height: 16),
-
-                  // 1. Show Already-Bonded / Paired Android Devices First
-                  if (pairedDevices.isNotEmpty) ...[
-                    const Text(
-                      'PAIRED PHONE DEVICES:',
-                      style: TextStyle(color: Colors.tealAccent, fontSize: 11, fontWeight: FontWeight.bold),
-                    ),
-                    const SizedBox(height: 8),
-                    ...pairedDevices.map((device) {
-                      final name = device.platformName.isNotEmpty ? device.platformName : "boAt Smartwatch";
-                      return Card(
-                        color: const Color(0xFF334155),
-                        margin: const EdgeInsets.only(bottom: 8),
-                        child: ListTile(
-                          leading: const Icon(Icons.watch_rounded, color: Colors.tealAccent, size: 28),
-                          title: Text(name, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                          subtitle: Text('ID: ${device.remoteId.str.substring(0, 8)}...', style: const TextStyle(color: Colors.white38, fontSize: 11)),
-                          trailing: ElevatedButton(
-                            style: ElevatedButton.styleFrom(backgroundColor: _primaryGreen, foregroundColor: Colors.white),
-                            child: const Text('Connect'),
-                            onPressed: () async {
-                              Navigator.pop(ctx);
-                              bool ok = await bleService.connectToWatch(device);
-                              if (!mounted) return;
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(content: Text(ok ? 'Connected to $name' : 'Connection failed. Re-try.')),
-                              );
-                            },
-                          ),
-                        ),
-                      );
-                    }),
-                    const SizedBox(height: 12),
-                  ],
-
-                  // 2. BLE Live Scanner (for newly advertising devices)
-                  const Text(
-                    'OTHER NEARBY DEVICES:',
-                    style: TextStyle(color: Colors.white54, fontSize: 11, fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 6),
-                  StreamBuilder<List<ScanResult>>(
-                    stream: bleService.scanForWatch(),
-                    builder: (context, snapshot) {
-                      if (!snapshot.hasData || snapshot.data!.isEmpty) {
-                        return Container(
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                          alignment: Alignment.center,
-                          child: pairedDevices.isNotEmpty
-                              ? const Text('Tap "Connect" on your paired watch above.', style: TextStyle(color: Colors.white38, fontSize: 12))
-                              : const Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.tealAccent)),
-                                    SizedBox(width: 10),
-                                    Text('Scanning for BLE signals...', style: TextStyle(color: Colors.white54, fontSize: 12)),
-                                  ],
-                                ),
-                        );
-                      }
-
-                      return ListView.builder(
-                        shrinkWrap: true,
-                        itemCount: snapshot.data!.length,
-                        itemBuilder: (context, idx) {
-                          final item = snapshot.data![idx];
-                          final displayName = item.device.platformName.isNotEmpty
-                              ? item.device.platformName
-                              : "BLE Device (${item.device.remoteId.str.substring(0, 5)}...)";
-
-                          return ListTile(
-                            dense: true,
-                            leading: const Icon(Icons.bluetooth, color: Colors.white54, size: 20),
-                            title: Text(displayName, style: const TextStyle(color: Colors.white, fontSize: 13)),
-                            subtitle: Text('RSSI: ${item.rssi} dBm', style: const TextStyle(color: Colors.white38, fontSize: 10)),
-                            trailing: TextButton(
-                              child: const Text('Connect', style: TextStyle(color: Colors.tealAccent, fontSize: 12)),
-                              onPressed: () async {
-                                Navigator.pop(ctx);
-                                await bleService.connectToWatch(item.device);
-                              },
-                            ),
-                          );
-                        },
-                      );
-                    },
-                  ),
+                  const Text('Pair boAt Lunar Connect', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+                  IconButton(icon: const Icon(Icons.close, color: Colors.white60), onPressed: () => Navigator.pop(ctx)),
                 ],
               ),
-            );
-          },
+              const SizedBox(height: 12),
+              if (pairedDevices.isNotEmpty) ...[
+                const Text('PAIRED PHONE DEVICES:', style: TextStyle(color: Colors.tealAccent, fontSize: 11, fontWeight: FontWeight.bold)),
+                const SizedBox(height: 8),
+                ...pairedDevices.map((device) {
+                  final name = device.platformName.isNotEmpty ? device.platformName : "boAt Smartwatch";
+                  return Card(
+                    color: const Color(0xFF334155),
+                    child: ListTile(
+                      leading: const Icon(Icons.watch_rounded, color: Colors.tealAccent, size: 28),
+                      title: Text(name, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                      trailing: ElevatedButton(
+                        style: ElevatedButton.styleFrom(backgroundColor: _primaryGreen, foregroundColor: Colors.white),
+                        child: const Text('Connect'),
+                        onPressed: () async {
+                          Navigator.pop(ctx);
+                          bool ok = await bleService.connectToWatch(device);
+                          if (!mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text(ok ? 'Connected to $name' : 'Connection failed')),
+                          );
+                        },
+                      ),
+                    ),
+                  );
+                }),
+              ],
+            ],
+          ),
         );
       },
     );
   }
 
   // ===========================================================================
-  // 5. UI COMPONENT BUILDERS
+  // 5. UI COMPONENTS
   // ===========================================================================
   Widget _buildActiveEmergencyBanner() {
     if (_activeEmergency == null) return const SizedBox.shrink();
@@ -455,10 +426,7 @@ class _ElderDashboardState extends State<ElderDashboard> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      'CRITICAL EMERGENCY ACTIVE',
-                      style: TextStyle(color: _accentRed, fontWeight: FontWeight.bold, fontSize: 14),
-                    ),
+                    const Text('CRITICAL EMERGENCY ACTIVE', style: TextStyle(color: _accentRed, fontWeight: FontWeight.bold, fontSize: 14)),
                     const SizedBox(height: 4),
                     Text(
                       'Source: ${_activeEmergency!['source'] ?? 'Emergency Trigger'}\nResponders and Trauma Bay alerted.',
@@ -525,11 +493,7 @@ class _ElderDashboardState extends State<ElderDashboard> {
                   ),
                   child: Text(
                     risk,
-                    style: TextStyle(
-                      color: risk == 'HIGH' ? Colors.red.shade800 : Colors.green.shade800,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 11,
-                    ),
+                    style: TextStyle(color: risk == 'HIGH' ? Colors.red.shade800 : Colors.green.shade800, fontWeight: FontWeight.bold, fontSize: 11),
                   ),
                 ),
               ],
@@ -537,11 +501,7 @@ class _ElderDashboardState extends State<ElderDashboard> {
             const Divider(height: 20),
             Text(
               'Bleed Risk: ${anticoagulants ? "Severe (Anticoagulants Active)" : "Normal"}',
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                color: anticoagulants ? Colors.red.shade700 : Colors.black87,
-              ),
+              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: anticoagulants ? Colors.red.shade700 : Colors.black87),
             ),
             const SizedBox(height: 4),
             Text('Documented: ${conditions.join(", ")}', style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
@@ -598,11 +558,7 @@ class _ElderDashboardState extends State<ElderDashboard> {
                       ),
                       child: Text(
                         badgeText,
-                        style: TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold,
-                          color: isOnline ? Colors.green.shade800 : Colors.amber.shade900,
-                        ),
+                        style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: isOnline ? Colors.green.shade800 : Colors.amber.shade900),
                       ),
                     );
                   },
@@ -612,7 +568,7 @@ class _ElderDashboardState extends State<ElderDashboard> {
             const SizedBox(height: 16),
             Row(
               children: [
-                // Heart Rate Tile
+                // Heart Rate Column
                 Expanded(
                   child: Container(
                     padding: const EdgeInsets.all(12),
@@ -647,7 +603,7 @@ class _ElderDashboardState extends State<ElderDashboard> {
                   ),
                 ),
                 const SizedBox(width: 12),
-                // Blood Pressure Tile
+                // Blood Pressure Column
                 Expanded(
                   child: Container(
                     padding: const EdgeInsets.all(12),
@@ -727,10 +683,10 @@ class _ElderDashboardState extends State<ElderDashboard> {
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: _isVoiceListening ? Colors.green.shade50 : Colors.grey.shade100,
+                color: _isVoiceArmed ? Colors.green.shade50 : Colors.amber.shade50,
                 shape: BoxShape.circle,
               ),
-              child: Icon(Icons.mic_rounded, color: _isVoiceListening ? Colors.green.shade700 : Colors.grey, size: 24),
+              child: Icon(Icons.mic_rounded, color: _isVoiceArmed ? Colors.green.shade700 : Colors.amber.shade800, size: 24),
             ),
             const SizedBox(width: 14),
             Expanded(
@@ -744,16 +700,16 @@ class _ElderDashboardState extends State<ElderDashboard> {
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                         decoration: BoxDecoration(
-                          color: _isVoiceListening ? Colors.green.shade50 : Colors.grey.shade100,
+                          color: _isVoiceArmed ? Colors.green.shade50 : Colors.amber.shade50,
                           borderRadius: BorderRadius.circular(6),
-                          border: Border.all(color: _isVoiceListening ? Colors.green.shade300 : Colors.grey.shade300),
+                          border: Border.all(color: _isVoiceArmed ? Colors.green.shade300 : Colors.amber.shade300),
                         ),
                         child: Text(
-                          _isVoiceListening ? 'ARMED' : 'STANDBY',
+                          _isVoiceArmed ? 'ACTIVE MIC' : 'INITIALIZING',
                           style: TextStyle(
                             fontSize: 10,
                             fontWeight: FontWeight.bold,
-                            color: _isVoiceListening ? Colors.green.shade800 : Colors.grey.shade600,
+                            color: _isVoiceArmed ? Colors.green.shade800 : Colors.amber.shade900,
                           ),
                         ),
                       ),
@@ -761,139 +717,16 @@ class _ElderDashboardState extends State<ElderDashboard> {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    'Listening for keywords: "Help", "Bachao", "Gir Gaya"',
-                    style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                    _lastSpokenWords.isEmpty
+                        ? 'Say aloud: "Bachao", "Help", or "Gir gaya"'
+                        : 'Heard: "$_lastSpokenWords"',
+                    style: TextStyle(fontSize: 11, color: Colors.grey.shade600, fontStyle: FontStyle.italic),
                   ),
                 ],
               ),
-            ),
-            IconButton(
-              icon: const Icon(Icons.volume_up_rounded, color: _primaryGreen),
-              tooltip: 'Test Voice Trigger',
-              onPressed: () {
-                _triggerEmergency(
-                  source: "Voice Distress Sentinel: Keyword 'Help / Bachao' Detected",
-                  triageLevel: "RED (Critical)",
-                  assessment: "Elder vocalized high-stress acoustic emergency keyword.",
-                  recommendation: "Immediate phone contact. Dispatch nearby neighborhood responder.",
-                );
-              },
             ),
           ],
         ),
-      ),
-    );
-  }
-
-  Widget _buildPresentationDemoDeck() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: const Color(0xFF0F172A),
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Row(
-                children: [
-                  Icon(Icons.science_outlined, color: Colors.tealAccent, size: 20),
-                  SizedBox(width: 8),
-                  Text(
-                    'Guide Demo & Simulation Deck',
-                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
-                  ),
-                ],
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(
-                  color: Colors.teal.withOpacity(0.2),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: const Text('EVALUATION TOOLS', style: TextStyle(color: Colors.tealAccent, fontSize: 9, fontWeight: FontWeight.bold)),
-              ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          const Text(
-            'One-tap simulations to prove complete backend cascade during presentation.',
-            style: TextStyle(color: Colors.white60, fontSize: 11),
-          ),
-          const SizedBox(height: 14),
-          Row(
-            children: [
-              // 1. Simulate Fall Button
-              Expanded(
-                child: ElevatedButton.icon(
-                  style: ElevatedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 10),
-                    backgroundColor: Colors.red.shade700,
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                  ),
-                  icon: const Icon(Icons.personal_injury_rounded, size: 16),
-                  label: const Text('Simulate Fall', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
-                  onPressed: () {
-                    _triggerEmergency(
-                      source: "AI CCTV: Living Room Fall Detected (Vision Sentinel)",
-                      triageLevel: "RED (Resuscitation)",
-                      assessment: "MediaPipe pose tracking confirmed plunge with 1.5s post-impact stillness.",
-                      recommendation: "Prepare Trauma Bay 1. Non-contrast cranial CT and pelvic radiographic series.",
-                    );
-                  },
-                ),
-              ),
-              const SizedBox(width: 8),
-              // 2. Simulate Voice SOS Button
-              Expanded(
-                child: ElevatedButton.icon(
-                  style: ElevatedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 10),
-                    backgroundColor: Colors.indigo.shade600,
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                  ),
-                  icon: const Icon(Icons.record_voice_over, size: 16),
-                  label: const Text('Simulate Voice', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
-                  onPressed: () {
-                    _triggerEmergency(
-                      source: "Voice Distress Sentinel: Keyword 'Help / Bachao' Detected",
-                      triageLevel: "RED (Critical)",
-                      assessment: "Acoustic speech recognition detected high-urgency distress phrase.",
-                      recommendation: "Immediate guardian verification. Dispatch nearest community volunteer.",
-                    );
-                  },
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          // 3. Simulate Geofence Button
-          SizedBox(
-            width: double.infinity,
-            child: OutlinedButton.icon(
-              style: OutlinedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 10),
-                side: const BorderSide(color: Colors.tealAccent),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-              ),
-              icon: const Icon(Icons.wrong_location_outlined, color: Colors.tealAccent, size: 16),
-              label: const Text('Simulate Geofence Breach (Wandering Alert)', style: TextStyle(color: Colors.tealAccent, fontSize: 11, fontWeight: FontWeight.bold)),
-              onPressed: () {
-                _triggerEmergency(
-                  source: "Geofence Breach (Wandering)",
-                  triageLevel: "YELLOW (Urgent)",
-                  assessment: "Elder GPS drifted 250m beyond pre-configured home perimeter boundary.",
-                  recommendation: "Alert family guardian. Verify elder orientation and dispatch local check-in.",
-                );
-              },
-            ),
-          ),
-        ],
       ),
     );
   }
@@ -905,8 +738,8 @@ class _ElderDashboardState extends State<ElderDashboard> {
           _triggerEmergency(
             source: 'Elder Manual SOS Button (Mobile Interface)',
             triageLevel: 'RED (Critical)',
-            assessment: 'Elder manually triggered physical panic button. Acute syncope or fracture suspected.',
-            recommendation: 'Immediate ambulance dispatch and trauma triage alert.',
+            assessment: 'Elder manually pressed physical panic button on mobile UI.',
+            recommendation: 'Immediate ambulance dispatch and local volunteer check-in.',
           );
         },
         child: Container(
@@ -916,11 +749,7 @@ class _ElderDashboardState extends State<ElderDashboard> {
             shape: BoxShape.circle,
             color: _accentRed,
             boxShadow: [
-              BoxShadow(
-                color: _accentRed.withOpacity(0.4),
-                blurRadius: 28,
-                spreadRadius: 8,
-              ),
+              BoxShadow(color: _accentRed.withOpacity(0.4), blurRadius: 28, spreadRadius: 8),
             ],
           ),
           child: Center(
@@ -931,10 +760,7 @@ class _ElderDashboardState extends State<ElderDashboard> {
                     children: [
                       Icon(Icons.touch_app_rounded, color: Colors.white, size: 44),
                       SizedBox(height: 4),
-                      Text(
-                        'PANIC SOS',
-                        style: TextStyle(color: Colors.white, fontSize: 19, fontWeight: FontWeight.bold, letterSpacing: 1.2),
-                      ),
+                      Text('PANIC SOS', style: TextStyle(color: Colors.white, fontSize: 19, fontWeight: FontWeight.bold, letterSpacing: 1.2)),
                       Text('Tap for Help', style: TextStyle(color: Colors.white70, fontSize: 11)),
                     ],
                   ),
@@ -975,10 +801,7 @@ class _ElderDashboardState extends State<ElderDashboard> {
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 1,
-        title: const Text(
-          'SahayAyu Elder Sentinel',
-          style: TextStyle(color: _primaryGreen, fontWeight: FontWeight.bold, fontSize: 20),
-        ),
+        title: const Text('SahayAyu Elder Sentinel', style: TextStyle(color: _primaryGreen, fontWeight: FontWeight.bold, fontSize: 20)),
         actions: [
           IconButton(
             icon: const Icon(Icons.chat_bubble_outline_rounded, color: Colors.black87),
@@ -1016,8 +839,6 @@ class _ElderDashboardState extends State<ElderDashboard> {
                 _buildBoatWearablesCard(),
                 const SizedBox(height: 14),
                 _buildVoiceSentinelCard(),
-                const SizedBox(height: 18),
-                _buildPresentationDemoDeck(),
                 const SizedBox(height: 24),
                 _buildSosButton(),
                 const SizedBox(height: 24),

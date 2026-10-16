@@ -6,382 +6,118 @@ import 'login_screen.dart';
 import 'cctv_surveillance_screen.dart';
 
 class GuardianDashboard extends StatefulWidget {
-  final String? targetElderId;
-
-  const GuardianDashboard({super.key, this.targetElderId});
+  const GuardianDashboard({super.key});
 
   @override
   State<GuardianDashboard> createState() => _GuardianDashboardState();
 }
 
-class _GuardianDashboardState extends State<GuardianDashboard>
-    with WidgetsBindingObserver {
+class _GuardianDashboardState extends State<GuardianDashboard> {
   static const Color _primaryGreen = Color(0xFF0F765E);
-  static const Color _sosRed = Color(0xFFD32F2F);
-  static const Color _bgColor = Color(0xFFF7F9F8);
+  static const Color _accentRed = Color(0xFFDC2626);
+  static const Color _bgColor = Color(0xFFF8FAFC);
 
-  late Stream<List<Map<String, dynamic>>> _emergenciesStream;
-  
-
-  Timer? _reconciliationTimer;
-  bool _isReconciling = false;
+  Stream<List<Map<String, dynamic>>>? _emergenciesStream;
+  Stream<List<Map<String, dynamic>>>? _profileStream;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addObserver(this);
     _initializeStreams();
-    _startReconciliationTimer();
   }
 
   void _initializeStreams() {
-    final targetId = widget.targetElderId;
+    final client = Supabase.instance.client;
+    _emergenciesStream = client
+        .from('emergencies')
+        .stream(primaryKey: ['id'])
+        .order('created_at', ascending: false);
 
-    if (targetId != null) {
-      _emergenciesStream = Supabase.instance.client
-          .from('emergencies')
-          .stream(primaryKey: ['id'])
-          .eq('elder_id', targetId)
-          .order('created_at', ascending: false)
-          .limit(50);
+    _profileStream = client
+        .from('elder_clinical_profiles')
+        .stream(primaryKey: ['id'])
+        .order('created_at', ascending: false)
+        .limit(1);
+  }
 
-    } else {
-      _emergenciesStream = Supabase.instance.client
-          .from('emergencies')
-          .stream(primaryKey: ['id'])
-          .order('created_at', ascending: false)
-          .limit(50);
-
+  Future<void> _openGoogleMaps(double lat, double lon) async {
+    final uri = Uri.parse('https://www.google.com/maps/search/?api=1&query=$lat,$lon');
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
     }
   }
 
-  void _startReconciliationTimer() {
-    _reconciliationTimer?.cancel();
-    _reconciliationTimer = Timer.periodic(const Duration(seconds: 30), (_) {
-      _reconcileOpenEmergencies();
-    });
-  }
-
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
-      _reconcileOpenEmergencies();
-    }
-  }
-
-  Future<void> _reconcileOpenEmergencies() async {
-    if (_isReconciling) return;
-    _isReconciling = true;
-    try {
-      final targetId = widget.targetElderId;
-      var query = Supabase.instance.client
-          .from('emergencies')
-          .select()
-          .eq('status', 'OPEN');
-
-      if (targetId != null) {
-        query = query.eq('elder_id', targetId);
-      }
-
-      await query.limit(1).maybeSingle();
-
-      if (mounted) {
-        setState(() {});
-      }
-    } catch (e) {
-      debugPrint('[Reconciliation] Error verifying active emergencies: $e');
-    } finally {
-      _isReconciling = false;
-    }
-  }
-
-  @override
-  void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
-    _reconciliationTimer?.cancel();
-    super.dispose();
-  }
-
-  // --- External Actions (Maps & Phone Dialer) ---
-
-  Future<void> _openGoogleMaps(double lat, double lng) async {
-    final uri =
-        Uri.parse('https://www.google.com/maps/search/?api=1&query=$lat,$lng');
-    try {
-      if (await canLaunchUrl(uri)) {
-        await launchUrl(uri, mode: LaunchMode.externalApplication);
-      } else {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Could not open map application.')),
-          );
-        }
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Map error: $e')),
-        );
-      }
-    }
-  }
-
-  Future<void> _makePhoneCall(String phoneNumber) async {
-    final uri = Uri.parse('tel:$phoneNumber');
-    try {
-      if (await canLaunchUrl(uri)) {
-        await launchUrl(uri);
-      } else {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Could not launch phone dialer.')),
-          );
-        }
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Call error: $e')),
-        );
-      }
-    }
-  }
-
-  Future<void> _resolveEmergency(dynamic id) async {
-    try {
-      await Supabase.instance.client.rpc(
-        'resolve_emergency',
-        params: {'p_emergency_id': id.toString()},
-      );
-    } catch (_) {
-      try {
-        await Supabase.instance.client
-            .from('emergencies')
-            .update({'status': 'RESOLVED'}).eq('id', id);
-      } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-                content: Text('Update failed: $e'),
-                backgroundColor: Colors.red),
-          );
-        }
-        return;
-      }
-    }
-
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Alert marked as resolved'),
-          backgroundColor: _primaryGreen,
-        ),
-      );
-    }
-  }
-
-  // --- Send Family Sandesh Modal ---
-
-  void _showSendSandeshDialog() {
-    final textController = TextEditingController();
-    String selectedPreset = '';
-
-    final presets = [
-      'Drink a glass of warm water! 💧',
-      'Took your morning medicines? 💊',
-      'Reaching home by 6 PM today! ❤️',
-      'Rest well this afternoon. 🌸',
-    ];
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (ctx) {
-        return StatefulBuilder(
-          builder: (context, setModalState) {
-            return Padding(
-              padding: EdgeInsets.only(
-                left: 20,
-                right: 20,
-                top: 20,
-                bottom: MediaQuery.of(ctx).viewInsets.bottom + 20,
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text(
-                        'Send Family Sandesh',
-                        style: TextStyle(
-                            fontSize: 18, fontWeight: FontWeight.bold),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.close),
-                        onPressed: () => Navigator.pop(ctx),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    'This note will appear prominently on the elder\'s screen.',
-                    style: TextStyle(fontSize: 13, color: Colors.grey[600]),
-                  ),
-                  const SizedBox(height: 14),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 6,
-                    children: presets.map((preset) {
-                      final isSelected = selectedPreset == preset;
-                      return ChoiceChip(
-                        label:
-                            Text(preset, style: const TextStyle(fontSize: 12)),
-                        selected: isSelected,
-                        selectedColor: _primaryGreen.withValues(alpha: 0.18),
-                        onSelected: (val) {
-                          setModalState(() {
-                            selectedPreset = val ? preset : '';
-                            if (val) textController.text = preset;
-                          });
-                        },
-                      );
-                    }).toList(),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: textController,
-                    maxLines: 2,
-                    decoration: InputDecoration(
-                      hintText: 'Or type custom message...',
-                      filled: true,
-                      fillColor: Colors.grey[100],
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide: BorderSide.none,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  SizedBox(
-                    width: double.infinity,
-                    height: 48,
-                    child: ElevatedButton.icon(
-                      onPressed: () async {
-                        final msg = textController.text.trim();
-                        if (msg.isEmpty) return;
-
-                        Navigator.pop(ctx);
-                        try {
-                          final user =
-                              Supabase.instance.client.auth.currentUser;
-                          final targetId = widget.targetElderId;
-
-                          final payload = <String, dynamic>{
-                            'sender_name': 'Family',
-                            'message': msg,
-                            'is_acknowledged': false,
-                          };
-                          if (user != null) {
-                            payload['sender_id'] = user.id;
-                          }
-                          if (targetId != null) {
-                            payload['elder_id'] = targetId;
-                          }
-
-                          await Supabase.instance.client
-                              .from('family_messages')
-                              .insert(payload);
-
-                          if (mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content:
-                                    Text('Sandesh sent to Elder screen! ❤️'),
-                                backgroundColor: _primaryGreen,
-                              ),
-                            );
-                          }
-                        } catch (e) {
-                          if (mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                  content: Text('Send failed: $e'),
-                                  backgroundColor: Colors.red),
-                            );
-                          }
-                        }
-                      },
-                      icon: const Icon(Icons.send_rounded, size: 18),
-                      label: const Text(
-                        'Send to Senior Screen',
-                        style: TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: _primaryGreen,
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12)),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            );
-          },
-        );
-      },
-    );
-  }
-
-  Future<void> _showLogoutDialog() async {
-    final shouldLogout = await showDialog<bool>(
+  void _showLogoutDialog() {
+    showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title:
-            const Text('Logout', style: TextStyle(fontWeight: FontWeight.bold)),
-        content:
-            const Text('Are you sure you want to logout from Guardian mode?'),
+        title: const Text('Confirm Logout'),
+        content: const Text('Do you want to log out of the Guardian portal?'),
         actions: [
           TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: Text('Cancel', style: TextStyle(color: Colors.grey[600])),
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
           ),
           ElevatedButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: _primaryGreen,
-              foregroundColor: Colors.white,
-            ),
-            child: const Text('Logout'),
+            style: ElevatedButton.styleFrom(backgroundColor: _primaryGreen),
+            onPressed: () async {
+              Navigator.pop(ctx);
+              await Supabase.instance.client.auth.signOut();
+              if (!mounted) return;
+              Navigator.pushReplacement(
+                context,
+                MaterialPageRoute(builder: (_) => const LoginScreen()),
+              );
+            },
+            child: const Text('Logout', style: TextStyle(color: Colors.white)),
           ),
         ],
       ),
     );
-
-    if (shouldLogout == true && mounted) {
-      await Supabase.instance.client.auth.signOut();
-      if (mounted) {
-        Navigator.pushAndRemoveUntil(
-          context,
-          MaterialPageRoute(builder: (context) => const LoginScreen()),
-          (route) => false,
-        );
-      }
-    }
   }
 
-  // --- Widget Builders ---
+  void _showSendSandeshDialog() {
+    final controller = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.favorite_rounded, color: _primaryGreen),
+            SizedBox(width: 8),
+            Text('Send Sandesh'),
+          ],
+        ),
+        content: TextField(
+          controller: controller,
+          decoration: const InputDecoration(
+            hintText: 'Enter wellness message for elder...',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: _primaryGreen),
+            onPressed: () {
+              Navigator.pop(ctx);
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Sandesh sent to Elder device!')),
+              );
+            },
+            child: const Text('Send', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+  }
 
   Widget _buildSectionHeader(String title, IconData icon) {
     return Row(
       children: [
-        Icon(icon, size: 20, color: _primaryGreen),
+        Icon(icon, color: _primaryGreen, size: 20),
         const SizedBox(width: 8),
         Text(
           title,
@@ -395,129 +131,41 @@ class _GuardianDashboardState extends State<GuardianDashboard>
     );
   }
 
-  Widget _buildActiveEmergencyBanner(Map<String, dynamic> alert) {
-    final source = alert['source'] ?? 'Emergency Triggered';
-    final heartRate = alert['heart_rate']?.toString() ?? '--';
-    final id = alert['id'];
-
+  Widget _buildActiveEmergencyBanner(Map<String, dynamic> activeAlert) {
     return Container(
-      width: double.infinity,
       margin: const EdgeInsets.only(bottom: 20),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFFFFEBEE),
+        color: _accentRed.withOpacity(0.08),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: _sosRed, width: 2),
-        boxShadow: [
-          BoxShadow(
-            color: _sosRed.withValues(alpha: 0.2),
-            blurRadius: 14,
-            offset: const Offset(0, 4),
-          ),
-        ],
+        border: Border.all(color: _accentRed, width: 1.5),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: const BoxDecoration(
-                  color: _sosRed,
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(Icons.warning_amber_rounded,
-                    color: Colors.white, size: 24),
-              ),
-              const SizedBox(width: 12),
-              const Expanded(
+              const Icon(Icons.warning_amber_rounded, color: _accentRed, size: 36),
+              const SizedBox(width: 14),
+              Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      'ACTIVE EMERGENCY DETECTED',
+                    const Text(
+                      'CRITICAL EMERGENCY ACTIVE',
                       style: TextStyle(
-                        color: _sosRed,
+                        color: _accentRed,
+                        fontWeight: FontWeight.bold,
                         fontSize: 14,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: 0.8,
                       ),
                     ),
+                    const SizedBox(height: 4),
                     Text(
-                      'Immediate response recommended',
-                      style: TextStyle(fontSize: 12, color: Colors.black87),
+                      'Source: ${activeAlert['source'] ?? 'Alert Triggered'}\nResponders and Trauma Bay alerted.',
+                      style: const TextStyle(fontSize: 12, color: Colors.black87),
                     ),
                   ],
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Expanded(
-                  child: Text(
-                    'Reason: $source',
-                    style: const TextStyle(
-                        fontWeight: FontWeight.bold, fontSize: 13),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                Text(
-                  'BPM: $heartRate',
-                  style: const TextStyle(
-                    color: _sosRed,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 13,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 14),
-          Row(
-            children: [
-              Expanded(
-                child: ElevatedButton.icon(
-                  onPressed: () => _makePhoneCall('+919876543210'),
-                  icon: const Icon(Icons.call, size: 16),
-                  label: const Text('Call Senior'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: _primaryGreen,
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10)),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: ElevatedButton.icon(
-                  onPressed: () => _makePhoneCall('108'),
-                  icon: const Icon(Icons.medical_services_outlined, size: 16),
-                  label: const Text('Dial 108'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: _sosRed,
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10)),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              IconButton(
-                onPressed: () => _resolveEmergency(id),
-                icon: const Icon(Icons.check_circle_outline,
-                    color: _primaryGreen, size: 28),
-                tooltip: 'Mark Resolved',
               ),
             ],
           ),
@@ -527,280 +175,65 @@ class _GuardianDashboardState extends State<GuardianDashboard>
   }
 
   Widget _buildLiveLocationCard() {
-  return StreamBuilder<List<Map<String, dynamic>>>(
-    stream: Supabase.instance.client
-        .from('elder_clinical_profiles')
-        .stream(primaryKey: ['id'])
-        .order('created_at', ascending: false)
-        .limit(1),
-    builder: (context, snapshot) {
-      double lat = 22.7196;
-      double lon = 75.8577;
-      String timeAgo = "Syncing...";
-
-      if (snapshot.hasData && snapshot.data!.isNotEmpty) {
-        final data = snapshot.data!.first;
-        lat = (data['last_latitude'] as num?)?.toDouble() ?? 22.7196;
-        lon = (data['last_longitude'] as num?)?.toDouble() ?? 75.8577;
-        timeAgo = "Live GPS: ${lat.toStringAsFixed(4)}, ${lon.toStringAsFixed(4)}";
-      }
-
-      return Card(
-        elevation: 0.5,
-        color: Colors.white,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-          side: BorderSide(color: Colors.grey.shade200),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Coordinate Header
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Row(
-                    children: [
-                      const Icon(Icons.location_on_rounded, color: Color(0xFF0F765E), size: 24),
-                      const SizedBox(width: 8),
-                      Text(
-                        timeAgo,
-                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                      ),
-                    ],
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.refresh, size: 20),
-                    onPressed: () => setState(() {}),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-
-              // Visual OpenStreetMap Static Snapshot (Zero API Key Needed)
-              ClipRRect(
-                borderRadius: BorderRadius.circular(12),
-                child: SizedBox(
-                  height: 150,
-                  width: double.infinity,
-                  child: Stack(
-                    alignment: Alignment.center,
-                    children: [
-                      Image.network(
-                        'https://static-maps.yandex.ru/1.x/?ll=$lon,$lat&z=15&l=map&size=450,200&pt=$lon,$lat,pm2rdm',
-                        fit: BoxFit.cover,
-                        width: double.infinity,
-                        height: 150,
-                        errorBuilder: (ctx, err, stack) => Container(
-                          color: Colors.grey.shade100,
-                          alignment: Alignment.center,
-                          child: const Text('Coordinates locked. Tap below to view on map.', style: TextStyle(fontSize: 12)),
-                        ),
-                      ),
-                      Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: Colors.red.withOpacity(0.9),
-                          shape: BoxShape.circle,
-                        ),
-                        child: const Icon(Icons.person_pin_circle, color: Colors.white, size: 28),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-
-              const SizedBox(height: 12),
-
-              // Launch External Google Maps App Button
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton.icon(
-                  style: OutlinedButton.styleFrom(
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                  ),
-                  icon: const Icon(Icons.map_rounded, size: 18),
-                  label: const Text('Open in Google Maps / Navigation'),
-                  onPressed: () {
-                    _openGoogleMaps(lat, lon);
-                  },
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
-    },
-  );
-}
-
-
-  Widget _buildEmergencyFeedStream() {
     return StreamBuilder<List<Map<String, dynamic>>>(
-      stream: _emergenciesStream,
+      stream: _profileStream,
       builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(
-            child: Padding(
-              padding: EdgeInsets.all(24.0),
-              child: CircularProgressIndicator(color: _primaryGreen),
-            ),
-          );
+        double lat = 22.7196;
+        double lon = 75.8577;
+
+        if (snapshot.hasData && snapshot.data!.isNotEmpty) {
+          final data = snapshot.data!.first;
+          lat = (data['last_latitude'] as num?)?.toDouble() ?? 22.7196;
+          lon = (data['last_longitude'] as num?)?.toDouble() ?? 75.8577;
         }
 
-        if (snapshot.hasError) {
-          return Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(18),
-            decoration: BoxDecoration(
-              color: const Color(0xFFFEF2F2),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: _sosRed, width: 2),
-            ),
+        return Card(
+          elevation: 0.5,
+          color: Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: BorderSide(color: Colors.grey.shade200),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(16.0),
             child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Icon(Icons.signal_wifi_connected_no_internet_4,
-                    size: 36, color: _sosRed),
-                const SizedBox(height: 8),
-                const Text(
-                  'Telemetry Stream Disrupted',
-                  style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 16,
-                      color: _sosRed),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'Cannot verify elder status right now. Check internet connection.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 12, color: Colors.grey[800]),
-                ),
-              ],
-            ),
-          );
-        }
-
-        final emergencies = snapshot.data ?? [];
-        if (emergencies.isEmpty) {
-          return Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(24),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: Colors.grey.shade200),
-            ),
-            child: Column(
-              children: [
-                const Icon(Icons.check_circle_outline,
-                    color: _primaryGreen, size: 40),
-                const SizedBox(height: 8),
-                const Text(
-                  'All Quiet & Safe',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                ),
-                Text(
-                  'No open emergency triggers at this time.',
-                  style: TextStyle(color: Colors.grey[600], fontSize: 13),
-                ),
-              ],
-            ),
-          );
-        }
-
-        return ListView.separated(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          itemCount: emergencies.length,
-          separatorBuilder: (_, __) => const SizedBox(height: 10),
-          itemBuilder: (context, index) {
-            final item = emergencies[index];
-            final status = (item['status'] ?? 'OPEN').toString().toUpperCase();
-            final isOpen = status == 'OPEN';
-            final source = item['source'] ?? 'SOS Alert';
-            final heartRate = item['heart_rate']?.toString() ?? '--';
-            final location = item['location'] ?? 'Indore Safe Zone';
-            final id = item['id'];
-
-            return Container(
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(
-                  color: isOpen
-                      ? _sosRed.withValues(alpha: 0.3)
-                      : Colors.grey.shade200,
-                  width: isOpen ? 1.5 : 1,
-                ),
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: isOpen
-                          ? const Color(0xFFFFEBEE)
-                          : const Color(0xFFE8F5E9),
-                      shape: BoxShape.circle,
-                    ),
-                    child: Icon(
-                      isOpen ? Icons.warning_rounded : Icons.task_alt,
-                      color: isOpen ? _sosRed : _primaryGreen,
-                      size: 22,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Row(
                       children: [
+                        const Icon(Icons.my_location_rounded, color: _primaryGreen, size: 20),
+                        const SizedBox(width: 8),
                         Text(
-                          source,
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 14,
-                            color: isOpen ? _sosRed : Colors.black87,
-                          ),
-                        ),
-                        const SizedBox(height: 3),
-                        Text(
-                          'Pulse: $heartRate BPM · $location',
-                          style:
-                              TextStyle(fontSize: 12, color: Colors.grey[600]),
+                          '${lat.toStringAsFixed(4)}, ${lon.toStringAsFixed(4)}',
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
                         ),
                       ],
                     ),
-                  ),
-                  if (isOpen)
-                    TextButton(
-                      onPressed: () => _resolveEmergency(id),
-                      style: TextButton.styleFrom(
-                        foregroundColor: _primaryGreen,
-                        textStyle: const TextStyle(
-                            fontWeight: FontWeight.bold, fontSize: 13),
-                      ),
-                      child: const Text('Resolve'),
-                    )
-                  else
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: Colors.grey.shade100,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        'Resolved',
-                        style: TextStyle(color: Colors.grey[600], fontSize: 11),
-                      ),
+                    IconButton(
+                      icon: const Icon(Icons.refresh, size: 20),
+                      onPressed: () => setState(() => _initializeStreams()),
                     ),
-                ],
-              ),
-            );
-          },
+                  ],
+                ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                    icon: const Icon(Icons.map_rounded, size: 18),
+                    label: const Text('Open in Google Maps / Navigation'),
+                    onPressed: () => _openGoogleMaps(lat, lon),
+                  ),
+                ),
+              ],
+            ),
+          ),
         );
       },
     );
@@ -808,7 +241,7 @@ class _GuardianDashboardState extends State<GuardianDashboard>
 
   Widget _buildCctvSentinelCard() {
     return Card(
-      elevation: 1,
+      elevation: 0.5,
       color: Colors.white,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
@@ -834,8 +267,7 @@ class _GuardianDashboardState extends State<GuardianDashboard>
                   color: _primaryGreen.withOpacity(0.12),
                   shape: BoxShape.circle,
                 ),
-                child: const Icon(Icons.videocam_rounded,
-                    color: _primaryGreen, size: 26),
+                child: const Icon(Icons.videocam_rounded, color: _primaryGreen, size: 26),
               ),
               const SizedBox(width: 14),
               Expanded(
@@ -846,16 +278,11 @@ class _GuardianDashboardState extends State<GuardianDashboard>
                       children: [
                         const Text(
                           'Optical CCTV Sentinel',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.black87,
-                          ),
+                          style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
                         ),
                         const SizedBox(width: 8),
                         Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 6, vertical: 2),
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                           decoration: BoxDecoration(
                             color: Colors.green.shade50,
                             borderRadius: BorderRadius.circular(6),
@@ -875,105 +302,158 @@ class _GuardianDashboardState extends State<GuardianDashboard>
                     const SizedBox(height: 4),
                     Text(
                       'Tap to view real-time feed & room coverage',
-                      style:
-                          TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                      style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
                     ),
                   ],
                 ),
               ),
-              Icon(Icons.arrow_forward_ios_rounded,
-                  size: 16, color: Colors.grey.shade400),
+              Icon(Icons.arrow_forward_ios_rounded, size: 16, color: Colors.grey.shade400),
             ],
           ),
         ),
       ),
     );
   }
-  // --- Main Build ---
+
+  Widget _buildEmergencyFeedStream() {
+    return StreamBuilder<List<Map<String, dynamic>>>(
+      stream: _emergenciesStream,
+      builder: (context, snapshot) {
+        if (!snapshot.hasData || snapshot.data!.isEmpty) {
+          return const Card(
+            child: Padding(
+              padding: EdgeInsets.all(16),
+              child: Text('No past incidents recorded.', style: TextStyle(color: Colors.grey)),
+            ),
+          );
+        }
+
+        final items = snapshot.data!;
+        return ListView.separated(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          itemCount: items.take(4).length,
+          separatorBuilder: (_, __) => const SizedBox(height: 8),
+          itemBuilder: (context, index) {
+            final e = items[index];
+            final isOpen = (e['status'] ?? '').toString().toUpperCase() == 'OPEN';
+
+            return Card(
+              elevation: 0.5,
+              color: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+                side: BorderSide(color: Colors.grey.shade200),
+              ),
+              child: ListTile(
+                leading: Icon(
+                  isOpen ? Icons.warning_amber_rounded : Icons.check_circle_outline,
+                  color: isOpen ? _accentRed : _primaryGreen,
+                ),
+                title: Text(
+                  e['source'] ?? 'Alert',
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                ),
+                subtitle: Text(
+                  'HR: ${e['heart_rate'] ?? "--"} BPM • SI: ${e['shock_index'] ?? "--"}',
+                  style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                ),
+                trailing: Text(
+                  e['status'] ?? 'OPEN',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                    color: isOpen ? _accentRed : _primaryGreen,
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
 
   @override
-Widget build(BuildContext context) {
-  return Scaffold(
-    backgroundColor: _bgColor,
-    appBar: AppBar(
-      backgroundColor: Colors.white,
-      elevation: 1,
-      title: const Text(
-        'SahayAyu Guardian',
-        style: TextStyle(
-          color: _primaryGreen,
-          fontWeight: FontWeight.bold,
-          fontSize: 20,
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: _bgColor,
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        elevation: 1,
+        title: const Text(
+          'SahayAyu Guardian',
+          style: TextStyle(
+            color: _primaryGreen,
+            fontWeight: FontWeight.bold,
+            fontSize: 20,
+          ),
+        ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.logout, color: Colors.black87),
+            onPressed: _showLogoutDialog,
+          ),
+        ],
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _showSendSandeshDialog,
+        backgroundColor: _primaryGreen,
+        icon: const Icon(Icons.favorite_rounded, color: Colors.white),
+        label: const Text(
+          'Send Sandesh',
+          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
         ),
       ),
-      actions: [
-        IconButton(
-          icon: const Icon(Icons.logout, color: Colors.black87),
-          onPressed: _showLogoutDialog,
-        ),
-      ],
-    ),
-    floatingActionButton: FloatingActionButton.extended(
-      onPressed: _showSendSandeshDialog,
-      backgroundColor: _primaryGreen,
-      icon: const Icon(Icons.favorite_rounded, color: Colors.white),
-      label: const Text(
-        'Send Sandesh',
-        style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-      ),
-    ),
-    body: SafeArea(
-      child: RefreshIndicator(
-        onRefresh: () async {
-          _initializeStreams();
-          await _reconcileOpenEmergencies();
-          setState(() {});
-        },
-        child: SingleChildScrollView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              StreamBuilder<List<Map<String, dynamic>>>(
-                stream: _emergenciesStream,
-                builder: (context, snapshot) {
-                  if (snapshot.hasData && snapshot.data!.isNotEmpty) {
-                    final activeAlert = snapshot.data!.cast<Map<String, dynamic>?>().firstWhere(
-                      (item) => (item?['status'] ?? '').toString().toUpperCase() == 'OPEN',
-                      orElse: () => null,
-                    );
-                    if (activeAlert != null) {
-                      return _buildActiveEmergencyBanner(activeAlert);
+      body: SafeArea(
+        child: RefreshIndicator(
+          onRefresh: () async {
+            setState(() => _initializeStreams());
+          },
+          child: SingleChildScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                StreamBuilder<List<Map<String, dynamic>>>(
+                  stream: _emergenciesStream,
+                  builder: (context, snapshot) {
+                    if (snapshot.hasData && snapshot.data!.isNotEmpty) {
+                      final activeAlert = snapshot.data!.cast<Map<String, dynamic>?>().firstWhere(
+                        (item) => (item?['status'] ?? '').toString().toUpperCase() == 'OPEN',
+                        orElse: () => null,
+                      );
+                      if (activeAlert != null) {
+                        return _buildActiveEmergencyBanner(activeAlert);
+                      }
                     }
-                  }
-                  return const SizedBox.shrink();
-                },
-              ),
+                    return const SizedBox.shrink();
+                  },
+                ),
 
-              _buildSectionHeader('Live Location Tracking', Icons.location_on_outlined),
-              const SizedBox(height: 8),
-              _buildLiveLocationCard(),
+                _buildSectionHeader('Live Location Tracking', Icons.location_on_outlined),
+                const SizedBox(height: 8),
+                _buildLiveLocationCard(),
 
-              const SizedBox(height: 24),
+                const SizedBox(height: 24),
 
-              // --- INSERTED: OPTICAL SENTINEL SURVEILLANCE TILE ---
-              _buildSectionHeader('Optical CCTV Sentinel', Icons.videocam_outlined),
-              const SizedBox(height: 8),
-              _buildCctvSentinelCard(),
+                _buildSectionHeader('Optical CCTV Sentinel', Icons.videocam_outlined),
+                const SizedBox(height: 8),
+                _buildCctvSentinelCard(),
 
-              const SizedBox(height: 24),
+                const SizedBox(height: 24),
 
-              _buildSectionHeader('Emergency & Wellness Feed', Icons.shield_outlined),
-              const SizedBox(height: 8),
-              _buildEmergencyFeedStream(),
+                _buildSectionHeader('Emergency & Wellness Feed', Icons.shield_outlined),
+                const SizedBox(height: 8),
+                _buildEmergencyFeedStream(),
 
-              const SizedBox(height: 60),
-            ],
+                const SizedBox(height: 60),
+              ],
+            ),
           ),
         ),
       ),
-    ),
-  );
-}
+    );
+  }
 }
