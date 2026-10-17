@@ -4,7 +4,6 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'login_screen.dart';
 import 'cctv_surveillance_screen.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 class GuardianDashboard extends StatefulWidget {
   const GuardianDashboard({super.key});
@@ -40,23 +39,26 @@ class _GuardianDashboardState extends State<GuardianDashboard> {
         .limit(1);
   }
 
-  Future<void> _openGoogleMapsNavigation(double lat, double lng) async {
-    // Universal geo intent that works on both Android and iOS
-    final Uri googleMapsUri =
-        Uri.parse('https://www.google.com/maps/search/?api=1&query=$lat,$lng');
+  Future<void> openNavigationMap(double lat, double lng) async {
+    // Universal Geo/Maps URL format that forces the native Google Maps app to open with directions
+    final Uri mapUri = Uri.parse(
+        'https://www.google.com/maps/dir/?api=1&destination=$lat,$lng');
 
     try {
-      if (await canLaunchUrl(googleMapsUri)) {
+      if (await canLaunchUrl(mapUri)) {
         await launchUrl(
-          googleMapsUri,
+          mapUri,
           mode: LaunchMode
-              .externalApplication, // Forces opening in the native Google Maps app
+              .externalApplication, // Forces opening in Google Maps app
         );
       } else {
-        debugPrint('[MAP ERROR] Could not launch maps URL.');
+        // Fallback to geo intent if browser/url launcher fails
+        final Uri fallbackUri =
+            Uri.parse('geo:$lat,$lng?q=$lat,$lng(Emergency+Location)');
+        await launchUrl(fallbackUri, mode: LaunchMode.externalApplication);
       }
     } catch (e) {
-      debugPrint('[MAP EXCEPTION] $e');
+      debugPrint('[MAP LAUNCH ERROR] $e');
     }
   }
 
@@ -250,7 +252,7 @@ class _GuardianDashboardState extends State<GuardianDashboard> {
                         style: TextStyle(
                             color: Colors.black87,
                             fontWeight: FontWeight.bold)),
-                    onPressed: () => _openGoogleMapsNavigation(
+                    onPressed: () => openNavigationMap(
                         lat, lon), // Uses live elder coordinates
                   ),
                 ),

@@ -236,21 +236,24 @@ class _VolunteerDashboardState extends State<VolunteerDashboard> {
     }
   }
 
-  Future<void> _openGoogleMapsNavigation(double lat, double lng) async {
-  // Universal geo intent that works on both Android and iOS
-  final Uri googleMapsUri = Uri.parse('https://www.google.com/maps/search/?api=1&query=$lat,$lng');
+
+Future<void> openNavigationMap(double lat, double lng) async {
+  // Universal Geo/Maps URL format that forces the native Google Maps app to open with directions
+  final Uri mapUri = Uri.parse('https://www.google.com/maps/dir/?api=1&destination=$lat,$lng');
   
   try {
-    if (await canLaunchUrl(googleMapsUri)) {
+    if (await canLaunchUrl(mapUri)) {
       await launchUrl(
-        googleMapsUri,
-        mode: LaunchMode.externalApplication, // Forces opening in the native Google Maps app
+        mapUri,
+        mode: LaunchMode.externalApplication, // Forces opening in Google Maps app
       );
     } else {
-      debugPrint('[MAP ERROR] Could not launch maps URL.');
+      // Fallback to geo intent if browser/url launcher fails
+      final Uri fallbackUri = Uri.parse('geo:$lat,$lng?q=$lat,$lng(Emergency+Location)');
+      await launchUrl(fallbackUri, mode: LaunchMode.externalApplication);
     }
   } catch (e) {
-    debugPrint('[MAP EXCEPTION] $e');
+    debugPrint('[MAP LAUNCH ERROR] $e');
   }
 }
 
@@ -477,7 +480,7 @@ class _VolunteerDashboardState extends State<VolunteerDashboard> {
                               ),
                               icon: const Icon(Icons.map_outlined, size: 14),
                               label: const Text('Map', style: TextStyle(fontSize: 12)),
-                              onPressed: () => _openGoogleMapsNavigation(lat, lng),
+                              onPressed: () => openNavigationMap(lat, lng),
                             ),
                           ],
                         ),
